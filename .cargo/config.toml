@@ -1,8 +1,0 @@
-[build]
-# The project builds with the GNU toolchain because this machine has no
-# Visual Studio C++ build tools installed. See README.md for details.
-target = "x86_64-pc-windows-gnu"
-
-[target.x86_64-pc-windows-gnu]
-linker = "C:\\Users\\Sunny\\Tools\\mingw64\\bin\\gcc.exe"
-rustflags = ["-C", "target-feature=+crt-static"]
