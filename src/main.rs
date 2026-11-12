@@ -4,6 +4,14 @@
 //! dependency is the windowing crate `minifb`.
 //!
 //! Run with `cargo run --release`. Use `--smoke` for a headless self-test.
+//!
+//! Release builds are linked as GUI programs, so launching the game never
+//! opens a console window. The command-line test modes reattach to the
+//! terminal they were started from to keep their output visible.
+
+// Debug builds keep the console so `cargo run` and the test harness stay
+// chatty; release builds are windowless.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
 mod canvas;
@@ -21,18 +29,123 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 
 fn main() {
     if std::env::args().any(|arg| arg == "--smoke") {
+        ensure_console();
         smoke_test();
         return;
     }
     if std::env::args().any(|arg| arg == "--audio-test") {
+        ensure_console();
         audio_test();
         return;
     }
 
     if let Err(err) = run() {
-        eprintln!("Could not start the game: {err}");
+        report_fatal(&format!("Could not start the game: {err}"));
         std::process::exit(1);
     }
+}
+
+/// Release builds have no console of their own. When a test mode needs to
+/// print, reattach to the terminal that started the process (if any).
+#[cfg(target_os = "windows")]
+fn ensure_console() {
+    use std::ffi::c_void;
+
+    const ATTACH_PARENT_PROCESS: u32 = 0xFFFF_FFFF;
+    const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5;
+    const STD_ERROR_HANDLE: u32 = 0xFFFF_FFF4;
+    const GENERIC_READ: u32 = 0x8000_0000;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const OPEN_EXISTING: u32 = 3;
+    const INVALID_HANDLE_VALUE: isize = -1;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetStdHandle(which: u32) -> *mut c_void;
+        fn SetStdHandle(which: u32, handle: *mut c_void) -> i32;
+        fn AttachConsole(process_id: u32) -> i32;
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            security: *mut c_void,
+            disposition: u32,
+            flags: u32,
+            template: *mut c_void,
+        ) -> *mut c_void;
+    }
+
+    unsafe {
+        // Started with redirected or inherited handles (e.g. `cargo run`):
+        // output already works, leave the handles alone.
+        let existing = GetStdHandle(STD_OUTPUT_HANDLE);
+        if !existing.is_null() && existing as isize != INVALID_HANDLE_VALUE {
+            return;
+        }
+
+        if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+            return;
+        }
+
+        let name: Vec<u16> = "CONOUT$".encode_utf16().chain(std::iter::once(0)).collect();
+        let console = CreateFileW(
+            name.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+        if console.is_null() || console as isize == INVALID_HANDLE_VALUE {
+            return;
+        }
+        SetStdHandle(STD_OUTPUT_HANDLE, console);
+        SetStdHandle(STD_ERROR_HANDLE, console);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ensure_console() {}
+
+/// Fatal errors are invisible without a console, so surface them in a dialog.
+#[cfg(target_os = "windows")]
+fn report_fatal(message: &str) {
+    use std::ffi::c_void;
+
+    const MB_OK: u32 = 0x0000_0000;
+    const MB_ICONERROR: u32 = 0x0000_0010;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut c_void,
+            text: *const u16,
+            caption: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+
+    eprintln!("{message}");
+
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let text = wide(message);
+    let caption = wide("NEON PURGE");
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn report_fatal(message: &str) {
+    eprintln!("{message}");
 }
 
 fn run() -> Result<(), minifb::Error> {
