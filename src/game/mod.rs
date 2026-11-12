@@ -5,11 +5,13 @@ mod sim;
 
 use std::f32::consts::TAU;
 
+use crate::audio::{Sfx, SoundEvent};
 use crate::canvas::{lerp_color, rgb};
 use crate::math::Vec2;
 
 pub const W: i32 = 1280;
 pub const H: i32 = 720;
+const MAX_PENDING_SOUNDS: usize = 48;
 
 pub(super) const ARENA_MARGIN: f32 = 44.0;
 pub(super) const PLAYER_R: f32 = 14.0;
@@ -87,6 +89,7 @@ pub struct Input {
     pub press_start: bool,
     pub press_pause: bool,
     pub press_restart: bool,
+    pub press_mute: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +330,10 @@ pub struct Game {
     pickups: Vec<Pickup>,
     popups: Vec<Popup>,
 
+    sounds: Vec<SoundEvent>,
+    hit_sfx_cd: f32,
+    sound_muted: bool,
+
     wave: u32,
     wave_break: f32,
     spawn_queue: Vec<EnemyKind>,
@@ -367,6 +374,9 @@ impl Game {
             shockwaves: Vec::new(),
             pickups: Vec::new(),
             popups: Vec::new(),
+            sounds: Vec::new(),
+            hit_sfx_cd: 0.0,
+            sound_muted: false,
             wave: 0,
             wave_break: 0.0,
             spawn_queue: Vec::new(),
@@ -412,6 +422,30 @@ impl Game {
         (self.score, self.wave, self.kills, self.player.hp)
     }
 
+    pub fn drain_sounds(&mut self) -> impl Iterator<Item = SoundEvent> + '_ {
+        self.sounds.drain(..)
+    }
+
+    pub fn sound_muted(&self) -> bool {
+        self.sound_muted
+    }
+
+    fn push_sound(&mut self, event: SoundEvent) {
+        if self.sounds.len() < MAX_PENDING_SOUNDS {
+            self.sounds.push(event);
+        }
+    }
+
+    fn play_centered(&mut self, sfx: Sfx, gain: f32) {
+        self.push_sound(SoundEvent::new(sfx, 0.0, gain));
+    }
+
+    fn play_at(&mut self, sfx: Sfx, pos: Vec2, gain: f32) {
+        let pan = ((pos.x - self.player.pos.x) / (W as f32 * 0.5)).clamp(-1.0, 1.0);
+        let falloff = (1.0 - pos.dist(self.player.pos) / 1100.0).clamp(0.20, 1.0);
+        self.push_sound(SoundEvent::new(sfx, pan, gain * falloff));
+    }
+
     /// Used by the headless smoke test to exercise the death screen.
     pub fn force_death(&mut self) {
         self.player.hp = 0.0;
@@ -420,6 +454,7 @@ impl Game {
     pub fn start_run(&mut self) {
         self.state = State::Playing;
         self.quit = false;
+        self.sounds.clear();
         self.player = Player::new(Vec2::new(W as f32 * 0.5, H as f32 * 0.5));
         self.enemies.clear();
         self.bullets.clear();
@@ -444,6 +479,8 @@ impl Game {
         self.run_time = 0.0;
         self.banner.clear();
         self.banner_t = 0.0;
+        self.hit_sfx_cd = 0.0;
+        self.play_centered(Sfx::Start, 0.8);
         self.start_wave();
     }
 
@@ -451,8 +488,17 @@ impl Game {
 
     pub fn update(&mut self, dt: f32, input: &Input) {
         let dt = dt.clamp(0.0, 1.0 / 20.0);
+        self.sounds.clear();
         self.time += dt;
         self.mouse = input.mouse;
+        self.hit_sfx_cd = (self.hit_sfx_cd - dt).max(0.0);
+
+        if input.press_mute {
+            self.sound_muted = !self.sound_muted;
+            if !self.sound_muted {
+                self.play_centered(Sfx::Ui, 0.6);
+            }
+        }
 
         // Screen effects keep fading on every screen.
         self.shake = (self.shake - dt * 26.0).max(0.0);
@@ -475,6 +521,7 @@ impl Game {
             State::Paused => {
                 if input.press_pause {
                     self.state = State::Playing;
+                    self.play_centered(Sfx::Ui, 0.7);
                 } else if input.press_restart {
                     self.start_run();
                 } else if input.press_start {
@@ -482,6 +529,7 @@ impl Game {
                     self.enemies.clear();
                     self.bullets.clear();
                     self.particles.clear();
+                    self.play_centered(Sfx::Ui, 0.7);
                 }
                 return;
             }
@@ -494,6 +542,7 @@ impl Game {
                     self.start_run();
                 } else if self.death_t > 0.55 && input.press_pause {
                     self.state = State::Title;
+                    self.play_centered(Sfx::Ui, 0.7);
                 }
                 return;
             }
@@ -502,6 +551,7 @@ impl Game {
 
         if input.press_pause {
             self.state = State::Paused;
+            self.play_centered(Sfx::Ui, 0.7);
             return;
         }
 
@@ -554,6 +604,7 @@ impl Game {
                     self.player.reload[i] = 0.0;
                     self.player.ammo[i] = WEAPONS[i].mag;
                     self.spark(self.player.pos, WEAPONS[i].color, 5, 90.0);
+                    self.play_centered(Sfx::Reloaded, 0.55);
                 }
             }
         }
@@ -562,12 +613,14 @@ impl Game {
             self.player.weapon = (self.player.weapon + 1) % WEAPONS.len();
             let col = WEAPONS[self.player.weapon].color;
             self.spark(self.player.pos, col, 6, 130.0);
+            self.play_centered(Sfx::Swap, 0.55);
         }
 
         if input.reload {
             let w = self.player.weapon;
             if self.player.reload[w] <= 0.0 && self.player.ammo[w] < WEAPONS[w].mag {
                 self.player.reload[w] = WEAPONS[w].reload_time;
+                self.play_centered(Sfx::Reload, 0.50);
             }
         }
 
@@ -600,6 +653,7 @@ impl Game {
             self.shake = self.shake.max(3.0);
             let dust = self.player.pos - self.player.dash_dir * self.player.r;
             self.spawn_burst(dust, C_ACCENT, 10, 180.0, 2.2);
+            self.play_centered(Sfx::Dash, 0.60);
         }
 
         if self.player.dash_time > 0.0 {
@@ -679,6 +733,10 @@ impl Game {
         }
         self.player.ammo[wi] -= 1;
         self.player.cooldown[wi] = weapon.delay;
+        self.play_centered(
+            if wi == 0 { Sfx::Rifle } else { Sfx::Shotgun },
+            if wi == 0 { 0.65 } else { 0.80 },
+        );
         self.player.muzzle = 0.06;
         self.player.vel -= Vec2::from_angle(self.player.aim) * (weapon.knock * 0.06);
         self.shake = self.shake.max(weapon.shake);
@@ -703,6 +761,7 @@ impl Game {
 
         if self.player.ammo[wi] == 0 {
             self.player.reload[wi] = weapon.reload_time;
+            self.play_centered(Sfx::Reload, 0.50);
         }
     }
 
@@ -746,6 +805,9 @@ impl Game {
         };
         self.banner_t = 2.2;
         self.flash = self.flash.max(0.15);
+        if w > 1 {
+            self.play_centered(Sfx::Wave, 0.55);
+        }
     }
 
     pub(super) fn spawn_enemy(&mut self, kind: EnemyKind) {

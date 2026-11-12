@@ -261,6 +261,12 @@ impl Game {
         let kw = c.text_width(&kills, 2);
         c.text_shadow(&kills, W - 48 - kw, 74, 2, C_DIM, 0.75);
 
+        if self.sound_muted {
+            let off = "SOUND OFF";
+            let ow = c.text_width(off, 1);
+            c.text_shadow(off, W - 48 - ow, 106, 1, rgb(255, 160, 90), 0.8);
+        }
+
         if self.banner_t > 0.0 && !self.banner.is_empty() {
             let a = (self.banner_t * 2.0).min(1.0);
             c.text_center_shadow(&self.banner, W / 2, 142, 5, C_WHITE, a);
@@ -269,7 +275,7 @@ impl Game {
         if self.run_time < 14.0 {
             let a = (1.0 - self.run_time / 14.0).clamp(0.0, 1.0) * 0.75;
             c.text_center(
-                "WASD MOVE   LMB FIRE   SHIFT DASH   R RELOAD   Q WEAPON   P PAUSE",
+                "WASD MOVE   LMB FIRE   SHIFT DASH   R RELOAD   Q WEAPON   P PAUSE   M SOUND",
                 W / 2,
                 196,
                 2,
@@ -470,6 +476,23 @@ impl Game {
         for (i, line) in lines.iter().enumerate() {
             c.text_center(line, W / 2, start_y + i as i32 * 24, 2, rgb(150, 175, 200), 0.8);
         }
+        let sound = if self.sound_muted {
+            "M               SOUND OFF"
+        } else {
+            "M               SOUND ON"
+        };
+        c.text_center(
+            sound,
+            W / 2,
+            start_y + lines.len() as i32 * 24,
+            2,
+            if self.sound_muted {
+                rgb(255, 160, 90)
+            } else {
+                rgb(150, 175, 200)
+            },
+            0.8,
+        );
 
         let best = format!("BEST {:06}", self.high_score);
         let bw = c.text_width(&best, 2);

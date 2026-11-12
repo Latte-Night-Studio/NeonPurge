@@ -113,6 +113,7 @@ impl Game {
             };
             self.bullets.push(bullet);
             self.spark(pos, C_SHOOTER, 4, 90.0);
+            self.play_at(Sfx::EnemyShot, pos, 0.42);
         }
     }
 
@@ -164,6 +165,7 @@ impl Game {
             }
         }
 
+        let hit_pos = enemy_hits.first().map(|hit| hit.3);
         for (ei, dmg, dir, pos, color) in enemy_hits {
             if ei >= self.enemies.len() || self.enemies[ei].hp <= 0.0 {
                 continue;
@@ -173,6 +175,13 @@ impl Game {
             e.hit_flash = 0.15;
             e.vel += dir * (2600.0 / e.r.max(12.0));
             self.spark(pos, color, 4, 150.0);
+        }
+
+        if let Some(pos) = hit_pos {
+            if self.hit_sfx_cd <= 0.0 {
+                self.play_at(Sfx::Hit, pos, 0.30);
+                self.hit_sfx_cd = 0.035;
+            }
         }
 
         let dead: Vec<usize> = self
@@ -220,6 +229,7 @@ impl Game {
                         self.player.hp = (self.player.hp + 30.0).min(self.player.max_hp);
                         self.popup(pos, "+30 HP".to_string(), C_HEALTH, 2);
                         self.spark(pos, C_HEALTH, 10, 180.0);
+                        self.play_at(Sfx::PickupHealth, pos, 0.55);
                     }
                     PickupKind::Ammo => {
                         for w in 0..WEAPONS.len() {
@@ -229,6 +239,7 @@ impl Game {
                         }
                         self.popup(pos, "AMMO".to_string(), C_AMMO, 2);
                         self.spark(pos, C_AMMO, 10, 180.0);
+                        self.play_at(Sfx::PickupAmmo, pos, 0.55);
                     }
                 }
             }
@@ -307,6 +318,7 @@ impl Game {
                 width: 3.0,
                 color: C_PLAYER,
             });
+            self.play_centered(Sfx::WaveClear, 0.65);
         }
     }
 
@@ -323,6 +335,7 @@ impl Game {
         self.combo = 0;
         self.combo_t = 0.0;
         self.spawn_burst(self.player.pos, rgb(255, 70, 90), 14, 240.0, 2.4);
+        self.play_centered(Sfx::Hurt, 0.75);
     }
 
     pub(super) fn kill_enemy(&mut self, idx: usize) {
@@ -355,6 +368,13 @@ impl Game {
         });
         self.popup(e.pos, format!("+{}", gain), color, 2);
 
+        let is_tank = e.kind == EnemyKind::Tank;
+        self.play_at(
+            if is_tank { Sfx::TankBoom } else { Sfx::Kill },
+            e.pos,
+            if is_tank { 0.85 } else { 0.50 },
+        );
+
         if self.rng.chance(0.14) {
             let phase = self.rng.range(0.0, TAU);
             self.pickups.push(Pickup {
@@ -374,7 +394,7 @@ impl Game {
             });
         }
 
-        if e.kind == EnemyKind::Tank {
+        if is_tank {
             self.shake = self.shake.max(11.0);
             for i in 0..8 {
                 let angle = i as f32 * TAU / 8.0 + self.rng.range(-0.16, 0.16);
@@ -402,6 +422,7 @@ impl Game {
         self.shake = 22.0;
         self.hit_stop = 0.0;
         self.damage_tint = 1.0;
+        self.play_centered(Sfx::GameOver, 0.90);
 
         if self.score > self.high_score {
             self.high_score = self.score;
