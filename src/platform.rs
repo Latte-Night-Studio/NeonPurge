@@ -3,7 +3,9 @@
 //! `minifb` can create a borderless window, but it has no fullscreen switch and
 //! keeps the caption in its "borderless" mode. On Windows we talk to `user32`
 //! directly: strip the frame and either centre a 1280x720 popup or stretch it
-//! over the current monitor. Other platforms keep the normal window.
+//! over the current monitor. The fullscreen window is also made topmost so the
+//! taskbar and other windows cannot draw over it. Other platforms keep the
+//! normal window.
 
 use minifb::Window;
 
@@ -33,12 +35,16 @@ pub fn apply(window: &Window, mode: DisplayMode) {
     const WS_POPUP: u32 = 0x8000_0000;
     const WS_VISIBLE: u32 = 0x1000_0000;
     const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
     const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
     const SWP_FRAMECHANGED: u32 = 0x0020;
     const SWP_SHOWWINDOW: u32 = 0x0040;
     const MONITOR_DEFAULTTONEAREST: u32 = 2;
     const SM_CXSCREEN: i32 = 0;
     const SM_CYSCREEN: i32 = 1;
+    const HWND_TOPMOST: *mut c_void = -1isize as *mut c_void;
+    const HWND_NOTOPMOST: *mut c_void = -2isize as *mut c_void;
 
     #[link(name = "user32")]
     extern "system" {
@@ -141,6 +147,24 @@ pub fn apply(window: &Window, mode: DisplayMode) {
                 );
             }
         }
+
+        // The taskbar is a topmost window, so a plain borderless popup still
+        // has the taskbar drawn over its bottom edge. Fullscreen keeps itself
+        // above the taskbar; the other modes return to the normal z-order.
+        let insert_after = if mode == DisplayMode::Fullscreen {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        };
+        SetWindowPos(
+            hwnd,
+            insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
         SetForegroundWindow(hwnd);
     }
 }
