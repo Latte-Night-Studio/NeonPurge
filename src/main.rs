@@ -30,6 +30,7 @@ use canvas::Canvas;
 use game::{Game, Input, State, H, W};
 use math::Vec2;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
+use settings::{DisplayMode, Resolution};
 
 fn main() {
     if std::env::args().any(|arg| arg == "--smoke") {
@@ -157,8 +158,12 @@ fn run() -> Result<(), minifb::Error> {
     let mut game = Game::new();
     let mut audio = Audio::new();
 
-    let mut window = create_window()?;
-    platform::apply(&window, game.settings().display);
+    let mut window = create_window(game.settings().display, game.settings().resolution)?;
+    platform::apply(
+        &window,
+        game.settings().display,
+        game.settings().resolution,
+    );
     let mut cursor_visible = true;
 
     let mut mouse = Vec2::new(W as f32 * 0.5, H as f32 * 0.5);
@@ -216,11 +221,17 @@ fn run() -> Result<(), minifb::Error> {
         }
         game.draw(&mut canvas);
 
-        // Display-mode changes rebuild the native window; minifb has no
-        // fullscreen switch of its own.
-        if let Some(mode) = game.take_display_request() {
-            window = create_window()?;
-            platform::apply(&window, mode);
+        // Display-mode and resolution changes rebuild the native window;
+        // minifb has no fullscreen switch of its own. The fresh window is
+        // created at its final size so minifb's internal size never lags
+        // behind the pixels it is asked to draw.
+        if game.take_display_request().is_some() {
+            window = create_window(game.settings().display, game.settings().resolution)?;
+            platform::apply(
+                &window,
+                game.settings().display,
+                game.settings().resolution,
+            );
             cursor_visible = true;
             // Swallow the click that triggered the switch; the fresh window
             // reports a new press edge otherwise.
@@ -239,14 +250,20 @@ fn run() -> Result<(), minifb::Error> {
     Ok(())
 }
 
-fn create_window() -> Result<Window, minifb::Error> {
+fn create_window(mode: DisplayMode, resolution: Resolution) -> Result<Window, minifb::Error> {
+    let (width, height) = platform::initial_size(mode, resolution);
     let mut window = Window::new(
         "NEON PURGE",
-        W as usize,
-        H as usize,
+        width,
+        height,
         WindowOptions {
+            // Fullscreen and borderless are plain popups from the start, so the
+            // platform style change cannot resize the client area behind
+            // minifb's back.
+            borderless: mode != DisplayMode::Windowed,
             resize: false,
             scale_mode: ScaleMode::AspectRatioStretch,
+            topmost: mode == DisplayMode::Fullscreen,
             ..WindowOptions::default()
         },
     )?;

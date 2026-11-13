@@ -682,7 +682,7 @@ impl Game {
         c.text_center_shadow(text.settings, W / 2, panel.y + 34, 5, C_WHITE, 1.0);
 
         // Display mode.
-        c.text_center(text.display_mode, W / 2, 148, 2, C_DIM, 0.95);
+        c.text_center(text.display_mode, W / 2, 140, 2, C_DIM, 0.95);
         for (rect, action) in ui::settings_display_buttons().iter() {
             let (hovered, pressed) = self.hovered_pressed(*rect);
             let (label, selected) = match action {
@@ -699,8 +699,22 @@ impl Game {
             self.draw_button(c, *rect, label, 2, hovered, pressed, selected);
         }
 
+        // Resolution.
+        c.text_center(text.resolution, W / 2, 252, 2, C_DIM, 0.95);
+        for (rect, action) in ui::settings_resolution_buttons().iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let (label, selected) = match action {
+                Action::Resolution(resolution) => {
+                    (resolution.label(), *resolution == self.settings.resolution)
+                }
+                _ => (String::new(), false),
+            };
+            self.draw_button(c, *rect, &label, 2, hovered, pressed, selected);
+        }
+        c.text_center(text.resolution_note, W / 2, 338, 1, rgb(100, 120, 145), 0.8);
+
         // Language.
-        c.text_center(text.language, W / 2, 288, 2, C_DIM, 0.95);
+        c.text_center(text.language, W / 2, 358, 2, C_DIM, 0.95);
         for (rect, action) in ui::settings_language_buttons().iter() {
             let (hovered, pressed) = self.hovered_pressed(*rect);
             let (label, selected) = match action {
@@ -717,7 +731,7 @@ impl Game {
         }
 
         // Sound.
-        c.text_center(text.sound, W / 2, 428, 2, C_DIM, 0.95);
+        c.text_center(text.sound, W / 2, 466, 2, C_DIM, 0.95);
         for (rect, action) in ui::settings_sound_buttons().iter() {
             let (hovered, pressed) = self.hovered_pressed(*rect);
             let (label, selected) = match action {

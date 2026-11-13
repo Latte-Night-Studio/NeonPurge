@@ -9,7 +9,7 @@ use crate::audio::{Sfx, SoundEvent};
 use crate::canvas::{lerp_color, rgb};
 use crate::lang::{self, Lang};
 use crate::math::Vec2;
-use crate::settings::{DisplayMode, Settings};
+use crate::settings::{DisplayMode, Resolution, Settings};
 use crate::ui::{self, Action, Rect};
 
 pub const W: i32 = 1280;
@@ -542,6 +542,18 @@ impl Game {
         self.play_centered(Sfx::Ui, 0.6);
     }
 
+    fn change_resolution(&mut self, resolution: Resolution) {
+        if self.settings.resolution == resolution {
+            return;
+        }
+        self.settings.resolution = resolution;
+        self.settings.save();
+        // The window has to be rebuilt at the new size; reuse the display
+        // request path so `main` recreates it with fresh platform settings.
+        self.pending_display = Some(self.settings.display);
+        self.play_centered(Sfx::Ui, 0.6);
+    }
+
     fn update_settings(&mut self, input: &Input) {
         if input.press_pause || hit(&[ui::settings_back_button()], Action::Back, input) {
             self.close_settings();
@@ -550,6 +562,12 @@ impl Game {
         if let Some(action) = clicked_action(&ui::settings_display_buttons(), input) {
             if let Action::Display(mode) = action {
                 self.change_display(mode);
+            }
+            return;
+        }
+        if let Some(action) = clicked_action(&ui::settings_resolution_buttons(), input) {
+            if let Action::Resolution(resolution) = action {
+                self.change_resolution(resolution);
             }
             return;
         }
@@ -1143,6 +1161,10 @@ mod menu_tests {
 
         click(&mut game, ui::settings_display_buttons()[2].0);
         assert_eq!(game.settings.display, DisplayMode::Fullscreen);
+        assert_eq!(game.take_display_request(), Some(DisplayMode::Fullscreen));
+
+        click(&mut game, ui::settings_resolution_buttons()[2].0);
+        assert_eq!(game.settings.resolution, Resolution::new(1920, 1080));
         assert_eq!(game.take_display_request(), Some(DisplayMode::Fullscreen));
 
         click(&mut game, ui::settings_sound_buttons()[1].0);

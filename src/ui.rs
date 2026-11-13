@@ -7,7 +7,7 @@
 use super::W;
 use crate::lang::Lang;
 use crate::math::Vec2;
-use crate::settings::DisplayMode;
+use crate::settings::{DisplayMode, Resolution};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
@@ -45,6 +45,7 @@ pub enum Action {
     MainMenu,
     Back,
     Display(DisplayMode),
+    Resolution(Resolution),
     Language(Lang),
     Sound(bool),
 }
@@ -88,14 +89,11 @@ pub fn dead_buttons() -> [(Rect, Action); 3] {
 
 /// Display-mode selector: windowed / borderless / fullscreen.
 pub fn settings_display_buttons() -> [(Rect, Action); 3] {
-    let y = 205;
+    let y = 174;
     let w = 280;
-    let h = 56;
+    let h = 48;
     [
-        (
-            Rect::new(200, y, w, h),
-            Action::Display(DisplayMode::Windowed),
-        ),
+        (Rect::new(200, y, w, h), Action::Display(DisplayMode::Windowed)),
         (
             Rect::new(500, y, w, h),
             Action::Display(DisplayMode::Borderless),
@@ -107,10 +105,26 @@ pub fn settings_display_buttons() -> [(Rect, Action); 3] {
     ]
 }
 
+/// Resolution selector. Fullscreen ignores it (the monitor decides), but the
+/// value is remembered for windowed and borderless modes.
+pub fn settings_resolution_buttons() -> [(Rect, Action); 5] {
+    let y = 286;
+    let w = 184;
+    let h = 46;
+    let mut buttons = [(Rect::new(0, 0, 0, 0), Action::Back); 5];
+    for (i, resolution) in Resolution::ALL.iter().enumerate() {
+        buttons[i] = (
+            Rect::new(164 + i as i32 * 192, y, w, h),
+            Action::Resolution(*resolution),
+        );
+    }
+    buttons
+}
+
 pub fn settings_language_buttons() -> [(Rect, Action); 2] {
-    let y = 345;
+    let y = 392;
     let w = 280;
-    let h = 56;
+    let h = 48;
     [
         (Rect::new(350, y, w, h), Action::Language(Lang::Uk)),
         (Rect::new(650, y, w, h), Action::Language(Lang::En)),
@@ -118,9 +132,9 @@ pub fn settings_language_buttons() -> [(Rect, Action); 2] {
 }
 
 pub fn settings_sound_buttons() -> [(Rect, Action); 2] {
-    let y = 485;
+    let y = 500;
     let w = 200;
-    let h = 52;
+    let h = 46;
     [
         (Rect::new(420, y, w, h), Action::Sound(true)),
         (Rect::new(660, y, w, h), Action::Sound(false)),
@@ -142,6 +156,7 @@ mod tests {
             pause_buttons().to_vec(),
             dead_buttons().to_vec(),
             settings_display_buttons().to_vec(),
+            settings_resolution_buttons().to_vec(),
             settings_language_buttons().to_vec(),
             settings_sound_buttons().to_vec(),
             vec![settings_back_button()],
@@ -174,6 +189,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn every_resolution_has_a_button() {
+        let buttons = settings_resolution_buttons();
+        for (i, resolution) in Resolution::ALL.iter().enumerate() {
+            assert_eq!(buttons[i].1, Action::Resolution(*resolution));
+        }
+        assert!(buttons
+            .iter()
+            .all(|(rect, _)| rect.w > 0 && rect.h > 0));
     }
 
     #[test]

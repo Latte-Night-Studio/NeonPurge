@@ -50,6 +50,8 @@ pub struct Text {
     pub windowed: &'static str,
     pub borderless: &'static str,
     pub fullscreen: &'static str,
+    pub resolution: &'static str,
+    pub resolution_note: &'static str,
     pub language: &'static str,
     pub lang_uk: &'static str,
     pub lang_en: &'static str,
@@ -113,6 +115,8 @@ pub const EN: Text = Text {
     windowed: "WINDOWED",
     borderless: "BORDERLESS",
     fullscreen: "FULLSCREEN",
+    resolution: "RESOLUTION",
+    resolution_note: "FULLSCREEN ALWAYS USES THE MONITOR RESOLUTION",
     language: "LANGUAGE",
     lang_uk: "UKRAINIAN",
     lang_en: "ENGLISH",
@@ -174,6 +178,8 @@ pub const UK: Text = Text {
     windowed: "ВІКОННИЙ",
     borderless: "БЕЗ РАМКИ",
     fullscreen: "ПОВНОЕКРАННИЙ",
+    resolution: "РОЗДІЛЬНА ЗДАТНІСТЬ",
+    resolution_note: "ПОВНОЕКРАННИЙ - РОЗДІЛЬНІСТЬ МОНІТОРА",
     language: "МОВА",
     lang_uk: "УКРАЇНСЬКА",
     lang_en: "АНГЛІЙСЬКА",
@@ -234,6 +240,8 @@ impl Text {
             self.windowed,
             self.borderless,
             self.fullscreen,
+            self.resolution,
+            self.resolution_note,
             self.language,
             self.lang_uk,
             self.lang_en,
@@ -290,6 +298,16 @@ mod tests {
                         "no glyph for {ch:?} in {line:?} ({lang:?})"
                     );
                 }
+            }
+        }
+        for resolution in crate::settings::Resolution::ALL {
+            for ch in resolution.label().chars() {
+                assert!(
+                    font::glyph(ch.to_uppercase().next().unwrap_or(ch))
+                        .iter()
+                        .any(|row| *row != 0),
+                    "no glyph for {ch:?} in a resolution label"
+                );
             }
         }
     }
