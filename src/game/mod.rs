@@ -7,7 +7,10 @@ use std::f32::consts::TAU;
 
 use crate::audio::{Sfx, SoundEvent};
 use crate::canvas::{lerp_color, rgb};
+use crate::lang::{self, Lang};
 use crate::math::Vec2;
+use crate::settings::{DisplayMode, Settings};
+use crate::ui::{self, Action, Rect};
 
 pub const W: i32 = 1280;
 pub const H: i32 = 720;
@@ -90,6 +93,10 @@ pub struct Input {
     pub press_pause: bool,
     pub press_restart: bool,
     pub press_mute: bool,
+    /// Left mouse button went down this frame (used by menu buttons).
+    pub press_click: bool,
+    /// Left mouse button is currently held (used for the pressed look).
+    pub mouse_down: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +109,13 @@ pub enum State {
     Playing,
     Paused,
     Dead,
+}
+
+/// Which page is shown inside the current non-playing screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MenuPage {
+    Main,
+    Settings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -220,7 +234,6 @@ pub(super) struct Pickup {
 
 #[derive(Clone, Copy)]
 pub(super) struct Weapon {
-    pub name: &'static str,
     pub mag: u32,
     pub reload_time: f32,
     pub delay: f32,
@@ -235,7 +248,6 @@ pub(super) struct Weapon {
 }
 
 pub(super) const RIFLE: Weapon = Weapon {
-    name: "RIFLE",
     mag: 30,
     reload_time: 1.05,
     delay: 0.085,
@@ -250,7 +262,6 @@ pub(super) const RIFLE: Weapon = Weapon {
 };
 
 pub(super) const SHOTGUN: Weapon = Weapon {
-    name: "SHOTGUN",
     mag: 6,
     reload_time: 1.75,
     delay: 0.55,
@@ -334,6 +345,12 @@ pub struct Game {
     hit_sfx_cd: f32,
     sound_muted: bool,
 
+    settings: Settings,
+    page: MenuPage,
+    pending_display: Option<DisplayMode>,
+    mouse_down: bool,
+    click_guard: f32,
+
     wave: u32,
     wave_break: f32,
     spawn_queue: Vec<EnemyKind>,
@@ -359,6 +376,7 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Self {
+        let settings = Settings::load();
         Self {
             state: State::Title,
             quit: false,
@@ -376,7 +394,12 @@ impl Game {
             popups: Vec::new(),
             sounds: Vec::new(),
             hit_sfx_cd: 0.0,
-            sound_muted: false,
+            sound_muted: !settings.sound,
+            settings,
+            page: MenuPage::Main,
+            pending_display: None,
+            mouse_down: false,
+            click_guard: 0.0,
             wave: 0,
             wave_break: 0.0,
             spawn_queue: Vec::new(),
@@ -430,6 +453,20 @@ impl Game {
         self.sound_muted
     }
 
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// Timed result of a display-mode click; the window is rebuilt by `main`.
+    pub fn take_display_request(&mut self) -> Option<DisplayMode> {
+        self.pending_display.take()
+    }
+
+    /// Menus need a real cursor; the arena aims with the crosshair instead.
+    pub fn cursor_visible(&self) -> bool {
+        self.state != State::Playing
+    }
+
     fn push_sound(&mut self, event: SoundEvent) {
         if self.sounds.len() < MAX_PENDING_SOUNDS {
             self.sounds.push(event);
@@ -446,6 +483,89 @@ impl Game {
         self.push_sound(SoundEvent::new(sfx, pan, gain * falloff));
     }
 
+    // -- menus --------------------------------------------------------------
+
+    fn open_settings(&mut self) {
+        self.page = MenuPage::Settings;
+        self.play_centered(Sfx::Ui, 0.6);
+    }
+
+    fn close_settings(&mut self) {
+        self.page = MenuPage::Main;
+        self.play_centered(Sfx::Ui, 0.6);
+    }
+
+    fn resume_game(&mut self) {
+        self.state = State::Playing;
+        self.page = MenuPage::Main;
+        self.play_centered(Sfx::Ui, 0.7);
+    }
+
+    fn to_title(&mut self) {
+        self.state = State::Title;
+        self.page = MenuPage::Main;
+        self.enemies.clear();
+        self.bullets.clear();
+        self.particles.clear();
+        self.popups.clear();
+        self.play_centered(Sfx::Ui, 0.7);
+    }
+
+    fn set_sound(&mut self, on: bool) {
+        if self.settings.sound == on {
+            return;
+        }
+        self.settings.sound = on;
+        self.sound_muted = !on;
+        self.settings.save();
+        if on {
+            self.play_centered(Sfx::Ui, 0.7);
+        }
+    }
+
+    fn change_language(&mut self, lang: Lang) {
+        if self.settings.lang == lang {
+            return;
+        }
+        self.settings.lang = lang;
+        self.settings.save();
+        self.play_centered(Sfx::Ui, 0.6);
+    }
+
+    fn change_display(&mut self, mode: DisplayMode) {
+        if self.settings.display == mode {
+            return;
+        }
+        self.settings.display = mode;
+        self.settings.save();
+        self.pending_display = Some(mode);
+        self.play_centered(Sfx::Ui, 0.6);
+    }
+
+    fn update_settings(&mut self, input: &Input) {
+        if input.press_pause || hit(&[ui::settings_back_button()], Action::Back, input) {
+            self.close_settings();
+            return;
+        }
+        if let Some(action) = clicked_action(&ui::settings_display_buttons(), input) {
+            if let Action::Display(mode) = action {
+                self.change_display(mode);
+            }
+            return;
+        }
+        if let Some(action) = clicked_action(&ui::settings_language_buttons(), input) {
+            if let Action::Language(lang) = action {
+                self.change_language(lang);
+            }
+            return;
+        }
+        if let Some(action) = clicked_action(&ui::settings_sound_buttons(), input) {
+            if let Action::Sound(on) = action {
+                self.set_sound(on);
+            }
+        }
+    }
+
     /// Used by the headless smoke test to exercise the death screen.
     pub fn force_death(&mut self) {
         self.player.hp = 0.0;
@@ -453,7 +573,9 @@ impl Game {
 
     pub fn start_run(&mut self) {
         self.state = State::Playing;
+        self.page = MenuPage::Main;
         self.quit = false;
+        self.click_guard = 0.18;
         self.sounds.clear();
         self.player = Player::new(Vec2::new(W as f32 * 0.5, H as f32 * 0.5));
         self.enemies.clear();
@@ -491,13 +613,12 @@ impl Game {
         self.sounds.clear();
         self.time += dt;
         self.mouse = input.mouse;
+        self.mouse_down = input.mouse_down;
         self.hit_sfx_cd = (self.hit_sfx_cd - dt).max(0.0);
+        self.click_guard = (self.click_guard - dt).max(0.0);
 
         if input.press_mute {
-            self.sound_muted = !self.sound_muted;
-            if !self.sound_muted {
-                self.play_centered(Sfx::Ui, 0.6);
-            }
+            self.set_sound(!self.settings.sound);
         }
 
         // Screen effects keep fading on every screen.
@@ -510,26 +631,38 @@ impl Game {
 
         match self.state {
             State::Title => {
+                if self.page == MenuPage::Settings {
+                    self.update_settings(input);
+                    return;
+                }
                 if input.press_pause {
                     self.quit = true;
+                    return;
                 }
-                if input.press_start {
+                let buttons = ui::title_buttons();
+                if input.press_start || hit(&buttons, Action::Start, input) {
                     self.start_run();
+                } else if hit(&buttons, Action::OpenSettings, input) {
+                    self.open_settings();
+                } else if hit(&buttons, Action::Quit, input) {
+                    self.quit = true;
                 }
                 return;
             }
             State::Paused => {
-                if input.press_pause {
-                    self.state = State::Playing;
-                    self.play_centered(Sfx::Ui, 0.7);
-                } else if input.press_restart {
+                if self.page == MenuPage::Settings {
+                    self.update_settings(input);
+                    return;
+                }
+                let buttons = ui::pause_buttons();
+                if input.press_pause || hit(&buttons, Action::Resume, input) {
+                    self.resume_game();
+                } else if input.press_restart || hit(&buttons, Action::Restart, input) {
                     self.start_run();
-                } else if input.press_start {
-                    self.state = State::Title;
-                    self.enemies.clear();
-                    self.bullets.clear();
-                    self.particles.clear();
-                    self.play_centered(Sfx::Ui, 0.7);
+                } else if input.press_start || hit(&buttons, Action::MainMenu, input) {
+                    self.to_title();
+                } else if hit(&buttons, Action::OpenSettings, input) {
+                    self.open_settings();
                 }
                 return;
             }
@@ -538,11 +671,20 @@ impl Game {
                 self.update_particles(dt);
                 self.update_shockwaves(dt);
                 self.update_popups(dt);
-                if self.death_t > 0.55 && (input.press_start || input.press_restart) {
+                if self.page == MenuPage::Settings {
+                    self.update_settings(input);
+                    return;
+                }
+                if self.death_t <= 0.55 {
+                    return;
+                }
+                let buttons = ui::dead_buttons();
+                if input.press_start || input.press_restart || hit(&buttons, Action::Restart, input) {
                     self.start_run();
-                } else if self.death_t > 0.55 && input.press_pause {
-                    self.state = State::Title;
-                    self.play_centered(Sfx::Ui, 0.7);
+                } else if input.press_pause || hit(&buttons, Action::MainMenu, input) {
+                    self.to_title();
+                } else if hit(&buttons, Action::OpenSettings, input) {
+                    self.open_settings();
                 }
                 return;
             }
@@ -702,7 +844,11 @@ impl Game {
         }
 
         let w = self.player.weapon;
-        if input.shoot && self.player.dash_time <= 0.0 && self.player.reload[w] <= 0.0 {
+        if input.shoot
+            && self.click_guard <= 0.0
+            && self.player.dash_time <= 0.0
+            && self.player.reload[w] <= 0.0
+        {
             if self.player.ammo[w] == 0 {
                 self.player.reload[w] = WEAPONS[w].reload_time;
             } else if self.player.cooldown[w] <= 0.0 {
@@ -798,10 +944,11 @@ impl Game {
         }
 
         self.spawn_timer = 0.7;
+        let text = lang::text(self.settings.lang);
         self.banner = if w % 5 == 0 {
-            format!("WAVE {} - ELITE", w)
+            format!("{} {} - {}", text.wave, w, text.elite)
         } else {
-            format!("WAVE {}", w)
+            format!("{} {}", text.wave, w)
         };
         self.banner_t = 2.2;
         self.flash = self.flash.max(0.15);
@@ -912,6 +1059,25 @@ impl Game {
     }
 }
 
+/// True when the user clicked (this frame) on the button with `action`.
+fn hit(buttons: &[(Rect, Action)], action: Action, input: &Input) -> bool {
+    input.press_click
+        && buttons
+            .iter()
+            .any(|(rect, kind)| *kind == action && rect.contains(input.mouse))
+}
+
+/// The action under the mouse on a fresh click, if any.
+fn clicked_action(buttons: &[(Rect, Action)], input: &Input) -> Option<Action> {
+    if !input.press_click {
+        return None;
+    }
+    buttons
+        .iter()
+        .find(|(rect, _)| rect.contains(input.mouse))
+        .map(|(_, action)| *action)
+}
+
 // ---------------------------------------------------------------------------
 // High score persistence
 // ---------------------------------------------------------------------------
@@ -932,5 +1098,108 @@ fn load_high_score() -> u32 {
 pub(super) fn save_high_score(value: u32) {
     if let Some(p) = high_score_path() {
         let _ = std::fs::write(p, value.to_string());
+    }
+}
+
+#[cfg(test)]
+mod menu_tests {
+    use super::*;
+
+    fn click(game: &mut Game, rect: Rect) {
+        let mouse = Vec2::new(
+            rect.x as f32 + rect.w as f32 * 0.5,
+            rect.y as f32 + rect.h as f32 * 0.5,
+        );
+        game.update(
+            1.0 / 60.0,
+            &Input {
+                mouse,
+                press_click: true,
+                mouse_down: true,
+                ..Input::default()
+            },
+        );
+        game.update(
+            1.0 / 60.0,
+            &Input {
+                mouse,
+                ..Input::default()
+            },
+        );
+    }
+
+    #[test]
+    fn mouse_buttons_drive_the_menus() {
+        let mut game = Game::new();
+        game.settings = Settings::default();
+        game.sound_muted = false;
+        assert_eq!(game.state, State::Title);
+
+        click(&mut game, ui::title_buttons()[1].0);
+        assert_eq!(game.page, MenuPage::Settings);
+
+        click(&mut game, ui::settings_language_buttons()[1].0);
+        assert_eq!(game.settings.lang, Lang::En);
+
+        click(&mut game, ui::settings_display_buttons()[2].0);
+        assert_eq!(game.settings.display, DisplayMode::Fullscreen);
+        assert_eq!(game.take_display_request(), Some(DisplayMode::Fullscreen));
+
+        click(&mut game, ui::settings_sound_buttons()[1].0);
+        assert!(!game.settings.sound);
+        assert!(game.sound_muted);
+
+        click(&mut game, ui::settings_back_button().0);
+        assert_eq!(game.page, MenuPage::Main);
+
+        click(&mut game, ui::title_buttons()[0].0);
+        assert_eq!(game.state, State::Playing);
+        assert!(!game.cursor_visible());
+    }
+
+    #[test]
+    fn clicks_outside_buttons_do_nothing() {
+        let mut game = Game::new();
+        game.settings = Settings::default();
+        let blank = Input {
+            mouse: Vec2::new(10.0, 10.0),
+            press_click: true,
+            mouse_down: true,
+            ..Input::default()
+        };
+        game.update(1.0 / 60.0, &blank);
+        assert_eq!(game.state, State::Title);
+        assert_eq!(game.page, MenuPage::Main);
+    }
+
+    #[test]
+    fn death_screen_offers_retry_and_menu() {
+        let mut game = Game::new();
+        game.settings = Settings::default();
+        game.state = State::Dead;
+        game.death_t = 1.0;
+        click(&mut game, ui::dead_buttons()[0].0);
+        assert_eq!(game.state, State::Playing);
+
+        game.state = State::Dead;
+        game.death_t = 1.0;
+        click(&mut game, ui::dead_buttons()[2].0);
+        assert_eq!(game.state, State::Title);
+    }
+
+    #[test]
+    fn pause_settings_returns_to_the_pause_menu() {
+        let mut game = Game::new();
+        game.settings = Settings::default();
+        game.start_run();
+        game.state = State::Paused;
+        click(&mut game, ui::pause_buttons()[1].0);
+        assert_eq!(game.page, MenuPage::Settings);
+        assert_eq!(game.state, State::Paused);
+        click(&mut game, ui::settings_back_button().0);
+        assert_eq!(game.page, MenuPage::Main);
+        assert_eq!(game.state, State::Paused);
+        click(&mut game, ui::pause_buttons()[0].0);
+        assert_eq!(game.state, State::Playing);
     }
 }

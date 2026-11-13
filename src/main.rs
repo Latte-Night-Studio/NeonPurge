@@ -17,7 +17,11 @@ mod audio;
 mod canvas;
 mod font;
 mod game;
+mod lang;
 mod math;
+mod platform;
+mod settings;
+mod ui;
 
 use std::time::{Duration, Instant};
 
@@ -25,7 +29,7 @@ use audio::{Audio, Sfx, SoundEvent};
 use canvas::Canvas;
 use game::{Game, Input, State, H, W};
 use math::Vec2;
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
 
 fn main() {
     if std::env::args().any(|arg| arg == "--smoke") {
@@ -149,22 +153,16 @@ fn report_fatal(message: &str) {
 }
 
 fn run() -> Result<(), minifb::Error> {
-    let mut window = Window::new(
-        "NEON PURGE",
-        W as usize,
-        H as usize,
-        WindowOptions {
-            resize: false,
-            ..WindowOptions::default()
-        },
-    )?;
-    window.set_target_fps(60);
-    window.set_cursor_visibility(false);
-
     let mut canvas = Canvas::new(W, H);
     let mut game = Game::new();
     let mut audio = Audio::new();
+
+    let mut window = create_window()?;
+    platform::apply(&window, game.settings().display);
+    let mut cursor_visible = true;
+
     let mut mouse = Vec2::new(W as f32 * 0.5, H as f32 * 0.5);
+    let mut prev_left = false;
     let mut last = Instant::now();
 
     while window.is_open() && !game.quit {
@@ -172,19 +170,29 @@ fn run() -> Result<(), minifb::Error> {
         let dt = (now - last).as_secs_f32().min(1.0 / 20.0);
         last = now;
 
-        if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
-            if x.is_finite() && y.is_finite() {
-                mouse = Vec2::new(x, y);
+        // The window can differ from the 1280x720 buffer (fullscreen), so map
+        // the raw client coordinates back into buffer space. `AspectRatioStretch`
+        // letterboxes the buffer, so the same scale and offsets apply to input.
+        let (win_w, win_h) = window.get_size();
+        if let Some((x, y)) = window.get_unscaled_mouse_pos(MouseMode::Discard) {
+            if x.is_finite() && y.is_finite() && win_w > 0 && win_h > 0 {
+                let scale = (win_w as f32 / W as f32).min(win_h as f32 / H as f32);
+                if scale > 0.0 {
+                    let off_x = (win_w as f32 - W as f32 * scale) * 0.5;
+                    let off_y = (win_h as f32 - H as f32 * scale) * 0.5;
+                    mouse = Vec2::new((x - off_x) / scale, (y - off_y) / scale);
+                }
             }
         }
 
+        let left = window.get_mouse_down(MouseButton::Left);
         let input = Input {
             mouse,
             up: window.is_key_down(Key::W) || window.is_key_down(Key::Up),
             down: window.is_key_down(Key::S) || window.is_key_down(Key::Down),
             left: window.is_key_down(Key::A) || window.is_key_down(Key::Left),
             right: window.is_key_down(Key::D) || window.is_key_down(Key::Right),
-            shoot: window.get_mouse_down(MouseButton::Left),
+            shoot: left,
             dash: window.is_key_down(Key::LeftShift)
                 || window.is_key_down(Key::RightShift)
                 || window.is_key_down(Key::Space),
@@ -196,7 +204,10 @@ fn run() -> Result<(), minifb::Error> {
                 || window.is_key_pressed(Key::Escape, KeyRepeat::No),
             press_restart: window.is_key_pressed(Key::R, KeyRepeat::No),
             press_mute: window.is_key_pressed(Key::M, KeyRepeat::No),
+            press_click: left && !prev_left,
+            mouse_down: left,
         };
+        prev_left = left;
 
         game.update(dt, &input);
         audio.set_muted(game.sound_muted());
@@ -205,10 +216,43 @@ fn run() -> Result<(), minifb::Error> {
         }
         game.draw(&mut canvas);
 
+        // Display-mode changes rebuild the native window; minifb has no
+        // fullscreen switch of its own.
+        if let Some(mode) = game.take_display_request() {
+            window = create_window()?;
+            platform::apply(&window, mode);
+            cursor_visible = true;
+            // Swallow the click that triggered the switch; the fresh window
+            // reports a new press edge otherwise.
+            prev_left = true;
+        }
+
+        let want_cursor = game.cursor_visible();
+        if want_cursor != cursor_visible {
+            window.set_cursor_visibility(want_cursor);
+            cursor_visible = want_cursor;
+        }
+
         window.update_with_buffer(&canvas.px, W as usize, H as usize)?;
     }
 
     Ok(())
+}
+
+fn create_window() -> Result<Window, minifb::Error> {
+    let mut window = Window::new(
+        "NEON PURGE",
+        W as usize,
+        H as usize,
+        WindowOptions {
+            resize: false,
+            scale_mode: ScaleMode::AspectRatioStretch,
+            ..WindowOptions::default()
+        },
+    )?;
+    window.set_target_fps(60);
+    window.set_background_color(0, 0, 0);
+    Ok(window)
 }
 
 /// Plays every effect once, panning from left to right. Useful for checking

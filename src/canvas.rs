@@ -319,7 +319,10 @@ impl Canvas {
         let scale = scale.max(1);
         let mut cx = x;
         for ch in s.chars() {
-            let g = font::glyph(ch.to_ascii_uppercase());
+            // `to_ascii_uppercase` leaves Cyrillic untouched, so fold the
+            // whole Unicode range and keep the first character.
+            let up = ch.to_uppercase().next().unwrap_or(ch);
+            let g = font::glyph(up);
             for (row, bits) in g.iter().enumerate() {
                 for col in 0..font::GLYPH_W {
                     if bits & (1 << (font::GLYPH_W - 1 - col)) != 0 {

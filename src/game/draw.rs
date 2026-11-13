@@ -4,7 +4,9 @@ use std::f32::consts::{FRAC_PI_4, SQRT_2};
 
 use super::*;
 use crate::canvas::{lerp_color, rgb, Canvas};
+use crate::lang;
 use crate::math::Vec2;
+use crate::ui::{self, Action, Rect};
 
 impl Game {
     pub fn draw(&mut self, c: &mut Canvas) {
@@ -12,6 +14,9 @@ impl Game {
 
         if self.state == State::Title {
             self.draw_title(c);
+            if self.page == MenuPage::Settings {
+                self.draw_settings(c);
+            }
             return;
         }
 
@@ -19,11 +24,17 @@ impl Game {
         self.draw_world(c, cam);
         self.draw_hud(c);
         match self.state {
-            State::Paused => self.draw_pause(c),
-            State::Dead => self.draw_dead(c),
+            State::Paused if self.page == MenuPage::Main => self.draw_pause(c),
+            State::Dead if self.page == MenuPage::Main => self.draw_dead(c),
             _ => {}
         }
-        self.draw_crosshair(c);
+        if self.page == MenuPage::Settings {
+            self.draw_settings(c);
+        } else if self.state == State::Playing {
+            // In the arena the crosshair is the pointer; menus use the real
+            // cursor instead.
+            self.draw_crosshair(c);
+        }
         self.draw_screen_effects(c);
     }
 
@@ -225,8 +236,9 @@ impl Game {
     // -- HUD ----------------------------------------------------------------
 
     fn draw_hud(&self, c: &mut Canvas) {
+        let text = lang::text(self.settings.lang);
         c.text_shadow(
-            &format!("WAVE {:02}", self.wave),
+            &format!("{} {:02}", text.wave, self.wave),
             48,
             40,
             3,
@@ -234,7 +246,7 @@ impl Game {
             1.0,
         );
         c.text_shadow(
-            &format!("SCORE {:06}", self.score),
+            &format!("{} {:06}", text.score, self.score),
             48,
             78,
             2,
@@ -248,21 +260,28 @@ impl Game {
                 rgb(255, 80, 120),
                 ((mult - 1.0) / 4.0).clamp(0.0, 1.0),
             );
-            c.text_shadow(&format!("COMBO X{:.1}", mult), 48, 108, 2, col, 0.95);
+            c.text_shadow(
+                &format!("{} X{:.1}", text.combo, mult),
+                48,
+                108,
+                2,
+                col,
+                0.95,
+            );
             c.rect(48, 132, 110, 4, rgb(30, 34, 44));
             let frac = (self.combo_t / 2.5).clamp(0.0, 1.0);
             c.rect(48, 132, (110.0 * frac) as i32, 4, col);
         }
 
-        let right = format!("BEST {:06}", self.high_score.max(self.score));
+        let right = format!("{} {:06}", text.best, self.high_score.max(self.score));
         let rw = c.text_width(&right, 2);
         c.text_shadow(&right, W - 48 - rw, 40, 2, C_DIM, 0.9);
-        let kills = format!("KILLS {}", self.kills);
+        let kills = format!("{} {}", text.kills, self.kills);
         let kw = c.text_width(&kills, 2);
         c.text_shadow(&kills, W - 48 - kw, 74, 2, C_DIM, 0.75);
 
         if self.sound_muted {
-            let off = "SOUND OFF";
+            let off = text.sound_off;
             let ow = c.text_width(off, 1);
             c.text_shadow(off, W - 48 - ow, 106, 1, rgb(255, 160, 90), 0.8);
         }
@@ -274,14 +293,7 @@ impl Game {
 
         if self.run_time < 14.0 {
             let a = (1.0 - self.run_time / 14.0).clamp(0.0, 1.0) * 0.75;
-            c.text_center(
-                "WASD MOVE   LMB FIRE   SHIFT DASH   R RELOAD   Q WEAPON   P PAUSE   M SOUND",
-                W / 2,
-                196,
-                2,
-                rgb(140, 165, 190),
-                a,
-            );
+            c.text_center(text.hint, W / 2, 196, 2, rgb(140, 165, 190), a);
         }
 
         // Health.
@@ -303,7 +315,12 @@ impl Game {
         c.rect_blend(bx, by, (bw as f32 * hp_frac) as i32, 5, rgb(255, 255, 255), 0.22);
         c.rect_outline(bx - 3, by - 3, bw + 6, bh + 6, 1, rgb(70, 90, 110), 0.6);
         c.text_shadow(
-            &format!("HP {:.0}/{:.0}", self.player.hp.max(0.0), self.player.max_hp),
+            &format!(
+                "{} {:.0}/{:.0}",
+                text.hp,
+                self.player.hp.max(0.0),
+                self.player.max_hp
+            ),
             bx + bw + 16,
             by + 2,
             2,
@@ -321,18 +338,18 @@ impl Game {
             rgb(50, 90, 120)
         };
         c.rect(bx, dy, (150.0 * dash_frac) as i32, 7, dash_col);
-        c.text("DASH", bx + 160, dy - 2, 1, C_DIM, 0.8);
+        c.text(text.dash, bx + 160, dy - 2, 1, C_DIM, 0.8);
 
         // Weapon panel.
         let w = self.player.weapon;
         let def = WEAPONS[w];
-        let name = def.name.to_string();
-        let nw = c.text_width(&name, 2);
-        c.text_shadow(&name, W - 48 - nw, H - 152, 2, C_WHITE, 0.85);
+        let name = if w == 0 { text.rifle } else { text.shotgun };
+        let nw = c.text_width(name, 2);
+        c.text_shadow(name, W - 48 - nw, H - 152, 2, C_WHITE, 0.85);
 
         let reloading = self.player.reload[w] > 0.0;
         let ammo_text = if reloading {
-            "RELOADING".to_string()
+            text.reloading.to_string()
         } else {
             format!("{} / {}", self.player.ammo[w], def.mag)
         };
@@ -408,7 +425,84 @@ impl Game {
 
     // -- screens ------------------------------------------------------------
 
+    /// One menu button, shared by every screen. `hovered` brightens it,
+    /// `pressed` sinks it a couple of pixels and `selected` marks the active
+    /// value in the settings page.
+    fn draw_button(
+        &self,
+        c: &mut Canvas,
+        rect: Rect,
+        label: &str,
+        scale: i32,
+        hovered: bool,
+        pressed: bool,
+        selected: bool,
+    ) {
+        let sink = if pressed { 2 } else { 0 };
+        let x = rect.x;
+        let y = rect.y + sink;
+
+        if hovered && !pressed {
+            c.glow(
+                Vec2::new((x + rect.w / 2) as f32, (y + rect.h / 2) as f32),
+                rect.w as f32 * 0.6,
+                C_ACCENT,
+                0.10,
+            );
+        }
+
+        let base = if selected {
+            rgb(16, 52, 48)
+        } else if pressed {
+            rgb(28, 40, 58)
+        } else if hovered {
+            rgb(22, 34, 52)
+        } else {
+            rgb(11, 16, 27)
+        };
+        c.rect_blend(x, y, rect.w, rect.h, rgb(0, 0, 0), 0.35);
+        c.rect_blend(x, y, rect.w, rect.h, base, 0.94);
+
+        let edge = if selected {
+            C_PLAYER
+        } else if hovered {
+            C_ACCENT
+        } else {
+            rgb(42, 62, 92)
+        };
+        let edge_alpha = if selected || hovered { 1.0 } else { 0.7 };
+        c.rect_outline(x, y, rect.w, rect.h, 2, edge, edge_alpha);
+        if selected {
+            c.rect(x, y + 7, 4, rect.h - 14, C_PLAYER);
+        }
+        if hovered {
+            c.rect_blend(x + 2, y + 2, rect.w - 4, 1, C_WHITE, 0.18);
+        }
+
+        let color = if selected || hovered { C_WHITE } else { rgb(176, 198, 220) };
+        let tw = c.text_width(label, scale);
+        let th = 7 * scale;
+        c.text_shadow(
+            label,
+            x + (rect.w - tw) / 2,
+            y + (rect.h - th) / 2,
+            scale,
+            color,
+            1.0,
+        );
+
+        if pressed {
+            c.rect_outline(x, y, rect.w, rect.h, 1, rgb(0, 0, 0), 0.35);
+        }
+    }
+
+    fn hovered_pressed(&self, rect: Rect) -> (bool, bool) {
+        let hovered = rect.contains(self.mouse);
+        (hovered, hovered && self.mouse_down)
+    }
+
     fn draw_title(&self, c: &mut Canvas) {
+        let text = lang::text(self.settings.lang);
         let t = self.time;
         let center = Vec2::new(W as f32 * 0.5, H as f32 * 0.5);
 
@@ -449,90 +543,204 @@ impl Game {
         );
 
         let title = "NEON PURGE";
-        let scale = 12;
+        let scale = 10;
         let tw = c.text_width(title, scale);
         let tx = (W - tw) / 2;
-        let ty = 150;
+        let ty = 70;
         c.text(title, tx - 5, ty, scale, rgb(255, 0, 110), 0.55);
         c.text(title, tx + 5, ty, scale, rgb(0, 255, 230), 0.55);
         c.text_shadow(title, tx, ty, scale, C_WHITE, 1.0);
 
-        c.text_center("ARENA SHOOTER", W / 2, ty + 112, 2, C_DIM, 0.95);
-        c.rect(W / 2 - 260, 302, 520, 1, rgb(40, 60, 90));
+        c.text_center(text.subtitle, W / 2, 156, 2, C_DIM, 0.95);
+        c.rect(W / 2 - 320, 188, 640, 1, rgb(40, 60, 90));
 
-        let pulse = 0.55 + 0.45 * (t * 3.2).sin();
-        c.text_center_shadow("PRESS ENTER TO DEPLOY", W / 2, 338, 4, C_PLAYER, pulse);
-
-        let lines = [
-            "WASD / ARROWS   MOVE",
-            "MOUSE           AIM",
-            "LEFT MOUSE      FIRE",
-            "SHIFT / SPACE   DASH",
-            "R               RELOAD",
-            "Q               SWAP WEAPON",
-            "P / ESC         PAUSE",
-        ];
-        let start_y = 414;
-        for (i, line) in lines.iter().enumerate() {
-            c.text_center(line, W / 2, start_y + i as i32 * 24, 2, rgb(150, 175, 200), 0.8);
+        // Controls, left column.
+        let controls_y = 252;
+        for (i, (keys, action)) in text.controls.iter().enumerate() {
+            let y = controls_y + i as i32 * 34;
+            c.text(keys, 110, y, 2, C_ACCENT, 0.85);
+            let w = c.text_width(keys, 2);
+            c.text(action, 110 + w + 28, y, 2, rgb(170, 192, 215), 0.9);
         }
-        let sound = if self.sound_muted {
-            "M               SOUND OFF"
-        } else {
-            "M               SOUND ON"
-        };
-        c.text_center(
-            sound,
-            W / 2,
-            start_y + lines.len() as i32 * 24,
-            2,
-            if self.sound_muted {
-                rgb(255, 160, 90)
-            } else {
-                rgb(150, 175, 200)
-            },
-            0.8,
-        );
 
-        let best = format!("BEST {:06}", self.high_score);
+        // Buttons, right column.
+        let buttons = ui::title_buttons();
+        for (rect, action) in buttons.iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let label = match action {
+                Action::Start => text.play,
+                Action::OpenSettings => text.settings,
+                Action::Quit => text.quit,
+                _ => "",
+            };
+            self.draw_button(c, *rect, label, 3, hovered, pressed, false);
+        }
+
+        let hint_y = buttons[2].0.y + buttons[2].0.h + 34;
+        c.text_center(text.start_hint, buttons[0].0.cx(), hint_y, 2, rgb(110, 130, 155), 0.8);
+
+        let best = format!("{} {:06}", text.best, self.high_score);
         let bw = c.text_width(&best, 2);
         c.text_shadow(&best, W - 48 - bw, 40, 2, C_DIM, 0.85);
-        c.text_center("ESC QUITS", W / 2, H - 46, 1, rgb(85, 100, 120), 0.65);
+        c.text_center(text.esc_hint, W / 2, H - 46, 1, rgb(85, 100, 120), 0.65);
     }
 
     fn draw_pause(&self, c: &mut Canvas) {
+        let text = lang::text(self.settings.lang);
         c.overlay(rgb(4, 6, 14), 0.72);
-        c.text_center_shadow("PAUSED", W / 2, 230, 8, C_WHITE, 1.0);
-        c.text_center("P / ESC    RESUME", W / 2, 370, 3, rgb(170, 200, 220), 0.9);
-        c.text_center("R          RESTART", W / 2, 424, 3, rgb(170, 200, 220), 0.9);
-        c.text_center("ENTER      MAIN MENU", W / 2, 478, 2, C_DIM, 0.85);
+        c.text_center_shadow(text.paused, W / 2, 190, 7, C_WHITE, 1.0);
+
+        let buttons = ui::pause_buttons();
+        for (rect, action) in buttons.iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let label = match action {
+                Action::Resume => text.resume,
+                Action::OpenSettings => text.settings,
+                Action::Restart => text.restart,
+                Action::MainMenu => text.main_menu,
+                _ => "",
+            };
+            self.draw_button(c, *rect, label, 3, hovered, pressed, false);
+        }
+        c.text_center(
+            text.esc_resume,
+            W / 2,
+            buttons[3].0.y + buttons[3].0.h + 26,
+            1,
+            rgb(120, 140, 165),
+            0.8,
+        );
     }
 
     fn draw_dead(&self, c: &mut Canvas) {
+        let text = lang::text(self.settings.lang);
         let a = (self.death_t * 2.5).min(0.7);
         c.overlay(rgb(30, 0, 10), a);
         c.glow(Vec2::new(W as f32 * 0.5, 250.0), 360.0, rgb(255, 40, 80), 0.22);
 
         let pulse = 0.6 + 0.4 * (self.time * 4.0).sin();
-        c.text_center_shadow("YOU DIED", W / 2, 200, 10, rgb(255, 80, 100), 1.0);
-        c.text_center(&format!("SCORE  {:06}", self.score), W / 2, 336, 3, C_WHITE, 0.95);
+        c.text_center_shadow(text.died, W / 2, 165, 8, rgb(255, 80, 100), 1.0);
         c.text_center(
-            &format!("WAVE  {}     KILLS  {}", self.wave, self.kills),
+            &format!("{}  {:06}", text.score, self.score),
             W / 2,
-            380,
+            268,
+            3,
+            C_WHITE,
+            0.95,
+        );
+        c.text_center(
+            &format!("{}  {}     {}  {}", text.wave, self.wave, text.kills, self.kills),
+            W / 2,
+            312,
             2,
             rgb(205, 160, 175),
             0.9,
         );
 
         if self.new_record {
-            c.text_center("NEW HIGH SCORE", W / 2, 424, 3, rgb(255, 220, 90), pulse);
+            c.text_center(text.new_record, W / 2, 350, 3, rgb(255, 220, 90), pulse);
         } else {
-            c.text_center(&format!("BEST  {:06}", self.high_score), W / 2, 424, 2, C_DIM, 0.85);
+            c.text_center(
+                &format!("{}  {:06}", text.best, self.high_score),
+                W / 2,
+                350,
+                2,
+                C_DIM,
+                0.85,
+            );
         }
 
-        c.text_center("R / ENTER   RETRY", W / 2, 502, 3, C_PLAYER, pulse);
-        c.text_center("ESC         MAIN MENU", W / 2, 552, 2, rgb(130, 150, 170), 0.8);
+        let buttons = ui::dead_buttons();
+        for (rect, action) in buttons.iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let label = match action {
+                Action::Restart => text.retry,
+                Action::OpenSettings => text.settings,
+                Action::MainMenu => text.main_menu,
+                _ => "",
+            };
+            self.draw_button(c, *rect, label, 3, hovered, pressed, false);
+        }
+        c.text_center(
+            text.esc_menu,
+            W / 2,
+            buttons[2].0.y + buttons[2].0.h + 25,
+            1,
+            rgb(130, 150, 170),
+            0.8,
+        );
+    }
+
+    fn draw_settings(&self, c: &mut Canvas) {
+        let text = lang::text(self.settings.lang);
+        c.overlay(rgb(3, 5, 12), 0.78);
+
+        let panel = Rect::new(140, 70, 1000, 580);
+        c.rect_blend(panel.x, panel.y, panel.w, panel.h, rgb(8, 12, 22), 0.94);
+        c.rect_outline(panel.x, panel.y, panel.w, panel.h, 2, rgb(45, 70, 105), 0.9);
+        c.rect(panel.x, panel.y, panel.w, 3, C_ACCENT);
+        c.text_center_shadow(text.settings, W / 2, panel.y + 34, 5, C_WHITE, 1.0);
+
+        // Display mode.
+        c.text_center(text.display_mode, W / 2, 148, 2, C_DIM, 0.95);
+        for (rect, action) in ui::settings_display_buttons().iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let (label, selected) = match action {
+                Action::Display(mode) => {
+                    let label = match mode {
+                        DisplayMode::Windowed => text.windowed,
+                        DisplayMode::Borderless => text.borderless,
+                        DisplayMode::Fullscreen => text.fullscreen,
+                    };
+                    (label, *mode == self.settings.display)
+                }
+                _ => ("", false),
+            };
+            self.draw_button(c, *rect, label, 2, hovered, pressed, selected);
+        }
+
+        // Language.
+        c.text_center(text.language, W / 2, 288, 2, C_DIM, 0.95);
+        for (rect, action) in ui::settings_language_buttons().iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let (label, selected) = match action {
+                Action::Language(lang) => {
+                    let label = match lang {
+                        Lang::Uk => text.lang_uk,
+                        Lang::En => text.lang_en,
+                    };
+                    (label, *lang == self.settings.lang)
+                }
+                _ => ("", false),
+            };
+            self.draw_button(c, *rect, label, 2, hovered, pressed, selected);
+        }
+
+        // Sound.
+        c.text_center(text.sound, W / 2, 428, 2, C_DIM, 0.95);
+        for (rect, action) in ui::settings_sound_buttons().iter() {
+            let (hovered, pressed) = self.hovered_pressed(*rect);
+            let (label, selected) = match action {
+                Action::Sound(on) => {
+                    let label = if *on { text.on } else { text.off };
+                    (label, *on == self.settings.sound)
+                }
+                _ => ("", false),
+            };
+            self.draw_button(c, *rect, label, 2, hovered, pressed, selected);
+        }
+
+        let (back, _) = ui::settings_back_button();
+        let (hovered, pressed) = self.hovered_pressed(back);
+        self.draw_button(c, back, text.back, 3, hovered, pressed, false);
+        c.text_center(
+            text.esc_back,
+            W / 2,
+            back.y + back.h + 14,
+            1,
+            rgb(100, 120, 145),
+            0.75,
+        );
     }
 
     fn draw_screen_effects(&self, c: &mut Canvas) {
@@ -641,3 +849,4 @@ pub(super) fn build_vignette(w: i32, h: i32) -> Vec<f32> {
     }
     map
 }
+

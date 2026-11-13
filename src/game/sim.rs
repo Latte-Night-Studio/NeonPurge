@@ -209,6 +209,7 @@ impl Game {
     pub(super) fn update_pickups(&mut self, dt: f32) {
         let player_pos = self.player.pos;
         let player_r = self.player.r;
+        let text = crate::lang::text(self.settings.lang);
 
         for i in 0..self.pickups.len() {
             self.pickups[i].life -= dt;
@@ -227,7 +228,7 @@ impl Game {
                 match self.pickups[i].kind {
                     PickupKind::Health => {
                         self.player.hp = (self.player.hp + 30.0).min(self.player.max_hp);
-                        self.popup(pos, "+30 HP".to_string(), C_HEALTH, 2);
+                        self.popup(pos, text.heal.to_string(), C_HEALTH, 2);
                         self.spark(pos, C_HEALTH, 10, 180.0);
                         self.play_at(Sfx::PickupHealth, pos, 0.55);
                     }
@@ -237,7 +238,7 @@ impl Game {
                             self.player.reload[w] = 0.0;
                             self.player.cooldown[w] = 0.0;
                         }
-                        self.popup(pos, "AMMO".to_string(), C_AMMO, 2);
+                        self.popup(pos, text.ammo.to_string(), C_AMMO, 2);
                         self.spark(pos, C_AMMO, 10, 180.0);
                         self.play_at(Sfx::PickupAmmo, pos, 0.55);
                     }
@@ -300,11 +301,12 @@ impl Game {
             let bonus = 50 + self.wave * 20;
             self.score += bonus;
             self.player.hp = (self.player.hp + 18.0).min(self.player.max_hp);
-            self.banner = format!("WAVE {} CLEARED", self.wave);
+            let text = crate::lang::text(self.settings.lang);
+            self.banner = format!("{} {} {}", text.wave, self.wave, text.cleared);
             self.banner_t = 2.6;
             self.popup(
                 self.player.pos + Vec2::new(0.0, -42.0),
-                format!("BONUS +{}", bonus),
+                format!("{} +{}", text.bonus, bonus),
                 C_ACCENT,
                 2,
             );
