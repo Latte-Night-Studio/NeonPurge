@@ -89,6 +89,8 @@ pub struct Input {
     pub dash: bool,
     pub reload: bool,
     pub swap: bool,
+    /// Direct weapon selection (`1`..`9`), as a zero-based weapon index.
+    pub select: Option<usize>,
     pub press_start: bool,
     pub press_pause: bool,
     pub press_restart: bool,
@@ -171,6 +173,12 @@ pub(super) struct Enemy {
     pub aim: f32,
     pub spawn: f32,
     pub strafe: f32,
+    /// Enemies start unaware so the knife can score silent kills. Loud
+    /// gunfire, explosions and close proximity wake them up.
+    pub alerted: bool,
+    pub awareness: f32,
+    pub wander: f32,
+    pub wander_t: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -182,6 +190,8 @@ pub(super) struct Bullet {
     pub life: f32,
     pub color: u32,
     pub from_player: bool,
+    /// Extra enemies the shot can pass through (sniper rifles).
+    pub pierce: u8,
 }
 
 pub(super) struct Particle {
@@ -232,8 +242,72 @@ pub(super) struct Pickup {
 // Weapons
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WeaponKind {
+    Pistol,
+    Smg,
+    Shotgun,
+    Rifle,
+    Sniper,
+    MachineGun,
+    Heavy,
+    Explosive,
+    Melee,
+}
+
+/// Every category from the issue, in the order the number keys select them.
+#[cfg(test)]
+pub(super) const WEAPON_KINDS: [WeaponKind; 9] = [
+    WeaponKind::Pistol,
+    WeaponKind::Smg,
+    WeaponKind::Shotgun,
+    WeaponKind::Rifle,
+    WeaponKind::Sniper,
+    WeaponKind::MachineGun,
+    WeaponKind::Heavy,
+    WeaponKind::Explosive,
+    WeaponKind::Melee,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FireMode {
+    /// One shot per trigger pull.
+    Semi,
+    /// Keeps firing while the button is held.
+    Auto,
+    /// Swings while the button is held, no ammo or reload.
+    Melee,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ProjectileKind {
+    Rocket,
+    Grenade,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct Blast {
+    pub radius: f32,
+    pub damage: f32,
+    pub self_damage: f32,
+    pub color: u32,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ProjectileSpec {
+    pub kind: ProjectileKind,
+    pub speed: f32,
+    pub r: f32,
+    pub fuse: f32,
+    pub drag: f32,
+    pub bounce: bool,
+    pub blast: Blast,
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct Weapon {
+    pub kind: WeaponKind,
+    pub fire: FireMode,
     pub mag: u32,
     pub reload_time: f32,
     pub delay: f32,
@@ -245,9 +319,93 @@ pub(super) struct Weapon {
     pub shake: f32,
     pub knock: f32,
     pub color: u32,
+    pub pierce: u8,
+    pub projectile: Option<ProjectileSpec>,
+    /// Movement multiplier: heavy weapons slow the player down.
+    pub move_scale: f32,
+    pub sound: Sfx,
+    pub gain: f32,
+    /// Radius in which the shot wakes unaware enemies. Zero is silent.
+    pub loudness: f32,
+    pub melee_range: f32,
+    pub melee_arc: f32,
 }
 
+pub(super) const PISTOL: Weapon = Weapon {
+    kind: WeaponKind::Pistol,
+    fire: FireMode::Semi,
+    mag: 12,
+    reload_time: 0.75,
+    delay: 0.20,
+    pellets: 1,
+    spread: 0.010,
+    damage: 24.0,
+    speed: 1600.0,
+    bullet_r: 2.6,
+    shake: 1.2,
+    knock: 160.0,
+    color: rgb(255, 232, 150),
+    pierce: 0,
+    projectile: None,
+    move_scale: 1.0,
+    sound: Sfx::Pistol,
+    gain: 0.55,
+    loudness: 650.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
+};
+
+pub(super) const SMG: Weapon = Weapon {
+    kind: WeaponKind::Smg,
+    fire: FireMode::Auto,
+    mag: 36,
+    reload_time: 1.25,
+    delay: 0.055,
+    pellets: 1,
+    spread: 0.080,
+    damage: 9.0,
+    speed: 1400.0,
+    bullet_r: 2.4,
+    shake: 1.0,
+    knock: 120.0,
+    color: rgb(255, 205, 120),
+    pierce: 0,
+    projectile: None,
+    move_scale: 0.97,
+    sound: Sfx::Smg,
+    gain: 0.45,
+    loudness: 720.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
+};
+
+pub(super) const SHOTGUN: Weapon = Weapon {
+    kind: WeaponKind::Shotgun,
+    fire: FireMode::Semi,
+    mag: 6,
+    reload_time: 1.75,
+    delay: 0.58,
+    pellets: 9,
+    spread: 0.30,
+    damage: 11.0,
+    speed: 1100.0,
+    bullet_r: 2.6,
+    shake: 7.0,
+    knock: 950.0,
+    color: rgb(255, 170, 90),
+    pierce: 0,
+    projectile: None,
+    move_scale: 0.94,
+    sound: Sfx::Shotgun,
+    gain: 0.80,
+    loudness: 950.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
+};
+
 pub(super) const RIFLE: Weapon = Weapon {
+    kind: WeaponKind::Rifle,
+    fire: FireMode::Auto,
     mag: 30,
     reload_time: 1.05,
     delay: 0.085,
@@ -259,23 +417,191 @@ pub(super) const RIFLE: Weapon = Weapon {
     shake: 2.0,
     knock: 300.0,
     color: rgb(255, 224, 130),
+    pierce: 0,
+    projectile: None,
+    move_scale: 0.93,
+    sound: Sfx::Rifle,
+    gain: 0.65,
+    loudness: 850.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
 };
 
-pub(super) const SHOTGUN: Weapon = Weapon {
-    mag: 6,
-    reload_time: 1.75,
-    delay: 0.55,
-    pellets: 9,
-    spread: 0.30,
+pub(super) const SNIPER: Weapon = Weapon {
+    kind: WeaponKind::Sniper,
+    fire: FireMode::Semi,
+    mag: 5,
+    reload_time: 2.2,
+    delay: 0.78,
+    pellets: 1,
+    spread: 0.002,
+    damage: 95.0,
+    speed: 2600.0,
+    bullet_r: 2.2,
+    shake: 6.5,
+    knock: 500.0,
+    color: rgb(180, 240, 255),
+    pierce: 3,
+    projectile: None,
+    move_scale: 0.88,
+    sound: Sfx::Sniper,
+    gain: 0.85,
+    loudness: 1300.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
+};
+
+pub(super) const MACHINE_GUN: Weapon = Weapon {
+    kind: WeaponKind::MachineGun,
+    fire: FireMode::Auto,
+    mag: 100,
+    reload_time: 4.5,
+    delay: 0.06,
+    pellets: 1,
+    spread: 0.10,
     damage: 11.0,
-    speed: 1000.0,
-    bullet_r: 2.6,
-    shake: 7.0,
-    knock: 950.0,
-    color: rgb(255, 170, 90),
+    speed: 1250.0,
+    bullet_r: 3.0,
+    shake: 2.2,
+    knock: 180.0,
+    color: rgb(255, 150, 110),
+    pierce: 0,
+    projectile: None,
+    move_scale: 0.72,
+    sound: Sfx::Rifle,
+    gain: 0.55,
+    loudness: 950.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
 };
 
-pub(super) const WEAPONS: [Weapon; 2] = [RIFLE, SHOTGUN];
+pub(super) const HEAVY: Weapon = Weapon {
+    kind: WeaponKind::Heavy,
+    fire: FireMode::Semi,
+    mag: 3,
+    reload_time: 2.8,
+    delay: 1.0,
+    pellets: 0,
+    spread: 0.0,
+    damage: 0.0,
+    speed: 0.0,
+    bullet_r: 0.0,
+    shake: 12.0,
+    knock: 700.0,
+    color: rgb(255, 120, 70),
+    pierce: 0,
+    projectile: Some(ProjectileSpec {
+        kind: ProjectileKind::Rocket,
+        speed: 680.0,
+        r: 5.0,
+        fuse: 2.2,
+        drag: 0.0,
+        bounce: false,
+        blast: Blast {
+            radius: 120.0,
+            damage: 105.0,
+            self_damage: 22.0,
+            color: rgb(255, 150, 80),
+        },
+    }),
+    move_scale: 0.80,
+    sound: Sfx::Rocket,
+    gain: 0.80,
+    loudness: 1250.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
+};
+
+pub(super) const EXPLOSIVE: Weapon = Weapon {
+    kind: WeaponKind::Explosive,
+    fire: FireMode::Semi,
+    mag: 4,
+    reload_time: 2.3,
+    delay: 0.70,
+    pellets: 0,
+    spread: 0.0,
+    damage: 0.0,
+    speed: 0.0,
+    bullet_r: 0.0,
+    shake: 8.0,
+    knock: 350.0,
+    color: rgb(190, 255, 120),
+    pierce: 0,
+    projectile: Some(ProjectileSpec {
+        kind: ProjectileKind::Grenade,
+        speed: 460.0,
+        r: 6.0,
+        fuse: 1.35,
+        drag: 1.4,
+        bounce: true,
+        blast: Blast {
+            radius: 150.0,
+            damage: 88.0,
+            self_damage: 26.0,
+            color: rgb(190, 255, 120),
+        },
+    }),
+    move_scale: 0.97,
+    sound: Sfx::Throw,
+    gain: 0.55,
+    loudness: 400.0,
+    melee_range: 0.0,
+    melee_arc: 0.0,
+};
+
+pub(super) const MELEE: Weapon = Weapon {
+    kind: WeaponKind::Melee,
+    fire: FireMode::Melee,
+    mag: 0,
+    reload_time: 0.0,
+    delay: 0.36,
+    pellets: 0,
+    spread: 0.0,
+    damage: 58.0,
+    speed: 0.0,
+    bullet_r: 0.0,
+    shake: 1.5,
+    knock: 0.0,
+    color: rgb(210, 255, 245),
+    pierce: 0,
+    projectile: None,
+    move_scale: 1.12,
+    sound: Sfx::Melee,
+    gain: 0.55,
+    loudness: 0.0,
+    melee_range: 64.0,
+    melee_arc: 0.85,
+};
+
+pub(super) const WEAPONS: [Weapon; 9] = [
+    PISTOL,
+    SMG,
+    SHOTGUN,
+    RIFLE,
+    SNIPER,
+    MACHINE_GUN,
+    HEAVY,
+    EXPLOSIVE,
+    MELEE,
+];
+
+pub const WEAPON_COUNT: usize = WEAPONS.len();
+pub(super) const STARTING_WEAPON: usize = 3;
+
+#[derive(Clone, Copy)]
+pub(super) struct Projectile {
+    pub pos: Vec2,
+    pub vel: Vec2,
+    pub r: f32,
+    pub life: f32,
+    pub max_life: f32,
+    pub color: u32,
+    pub kind: ProjectileKind,
+    pub blast: Blast,
+    pub bounce: bool,
+    pub drag: f32,
+    pub spin: f32,
+}
 
 pub(super) struct Player {
     pub pos: Vec2,
@@ -285,19 +611,26 @@ pub(super) struct Player {
     pub max_hp: f32,
     pub aim: f32,
     pub weapon: usize,
-    pub ammo: [u32; 2],
-    pub reload: [f32; 2],
-    pub cooldown: [f32; 2],
+    pub ammo: [u32; WEAPON_COUNT],
+    pub reload: [f32; WEAPON_COUNT],
+    pub cooldown: [f32; WEAPON_COUNT],
     pub dash_cd: f32,
     pub dash_time: f32,
     pub dash_dir: Vec2,
     pub iframes: f32,
     pub muzzle: f32,
     pub hurt_flash: f32,
+    /// Flash timer and direction for the knife swing.
+    pub slash: f32,
+    pub slash_angle: f32,
 }
 
 impl Player {
     fn new(pos: Vec2) -> Self {
+        let mut ammo = [0; WEAPON_COUNT];
+        for (slot, weapon) in ammo.iter_mut().zip(WEAPONS.iter()) {
+            *slot = weapon.mag;
+        }
         Self {
             pos,
             vel: Vec2::ZERO,
@@ -305,16 +638,18 @@ impl Player {
             hp: 100.0,
             max_hp: 100.0,
             aim: 0.0,
-            weapon: 0,
-            ammo: [RIFLE.mag, SHOTGUN.mag],
-            reload: [0.0, 0.0],
-            cooldown: [0.0, 0.0],
+            weapon: STARTING_WEAPON,
+            ammo,
+            reload: [0.0; WEAPON_COUNT],
+            cooldown: [0.0; WEAPON_COUNT],
             dash_cd: 0.0,
             dash_time: 0.0,
             dash_dir: Vec2::new(1.0, 0.0),
             iframes: 0.0,
             muzzle: 0.0,
             hurt_flash: 0.0,
+            slash: 0.0,
+            slash_angle: 0.0,
         }
     }
 }
@@ -336,6 +671,7 @@ pub struct Game {
     player: Player,
     enemies: Vec<Enemy>,
     bullets: Vec<Bullet>,
+    projectiles: Vec<Projectile>,
     particles: Vec<Particle>,
     shockwaves: Vec<Shockwave>,
     pickups: Vec<Pickup>,
@@ -344,6 +680,8 @@ pub struct Game {
     sounds: Vec<SoundEvent>,
     hit_sfx_cd: f32,
     sound_muted: bool,
+    /// Previous mouse-button state; semi-auto weapons fire on the rising edge.
+    trigger_held: bool,
 
     settings: Settings,
     page: MenuPage,
@@ -388,6 +726,7 @@ impl Game {
             player: Player::new(Vec2::new(W as f32 * 0.5, H as f32 * 0.5)),
             enemies: Vec::new(),
             bullets: Vec::new(),
+            projectiles: Vec::new(),
             particles: Vec::new(),
             shockwaves: Vec::new(),
             pickups: Vec::new(),
@@ -395,6 +734,7 @@ impl Game {
             sounds: Vec::new(),
             hit_sfx_cd: 0.0,
             sound_muted: !settings.sound,
+            trigger_held: false,
             settings,
             page: MenuPage::Main,
             pending_display: None,
@@ -506,6 +846,7 @@ impl Game {
         self.page = MenuPage::Main;
         self.enemies.clear();
         self.bullets.clear();
+        self.projectiles.clear();
         self.particles.clear();
         self.popups.clear();
         self.play_centered(Sfx::Ui, 0.7);
@@ -598,6 +939,7 @@ impl Game {
         self.player = Player::new(Vec2::new(W as f32 * 0.5, H as f32 * 0.5));
         self.enemies.clear();
         self.bullets.clear();
+        self.projectiles.clear();
         self.particles.clear();
         self.shockwaves.clear();
         self.pickups.clear();
@@ -620,6 +962,7 @@ impl Game {
         self.banner.clear();
         self.banner_t = 0.0;
         self.hit_sfx_cd = 0.0;
+        self.trigger_held = false;
         self.play_centered(Sfx::Start, 0.8);
         self.start_wave();
     }
@@ -726,6 +1069,7 @@ impl Game {
         self.update_player(sim_dt, input);
         self.update_enemies(sim_dt);
         self.update_bullets(sim_dt);
+        self.update_projectiles(sim_dt);
         self.update_pickups(sim_dt);
         self.update_particles(sim_dt);
         self.update_shockwaves(sim_dt);
@@ -756,7 +1100,9 @@ impl Game {
         self.player.hurt_flash = (self.player.hurt_flash - dt).max(0.0);
         self.player.dash_cd = (self.player.dash_cd - dt).max(0.0);
 
-        for i in 0..2 {
+        self.player.slash = (self.player.slash - dt).max(0.0);
+
+        for i in 0..WEAPON_COUNT {
             self.player.cooldown[i] = (self.player.cooldown[i] - dt).max(0.0);
             if self.player.reload[i] > 0.0 {
                 self.player.reload[i] -= dt;
@@ -769,20 +1115,29 @@ impl Game {
             }
         }
 
+        if let Some(index) = input.select {
+            if index < WEAPON_COUNT && index != self.player.weapon {
+                self.select_weapon(index);
+            }
+        }
         if input.swap {
-            self.player.weapon = (self.player.weapon + 1) % WEAPONS.len();
-            let col = WEAPONS[self.player.weapon].color;
-            self.spark(self.player.pos, col, 6, 130.0);
-            self.play_centered(Sfx::Swap, 0.55);
+            let next = (self.player.weapon + 1) % WEAPON_COUNT;
+            self.select_weapon(next);
         }
 
         if input.reload {
             let w = self.player.weapon;
-            if self.player.reload[w] <= 0.0 && self.player.ammo[w] < WEAPONS[w].mag {
+            if WEAPONS[w].kind != WeaponKind::Melee
+                && self.player.reload[w] <= 0.0
+                && self.player.ammo[w] < WEAPONS[w].mag
+            {
                 self.player.reload[w] = WEAPONS[w].reload_time;
                 self.play_centered(Sfx::Reload, 0.50);
             }
         }
+
+        let weapon = WEAPONS[self.player.weapon];
+        let w = self.player.weapon;
 
         let mut dir = Vec2::ZERO;
         if input.left {
@@ -836,7 +1191,7 @@ impl Game {
         } else {
             self.player.vel += dir * 2800.0 * dt;
             self.player.vel *= 1.0 / (1.0 + 11.0 * dt);
-            self.player.vel = self.player.vel.clamp_len(315.0);
+            self.player.vel = self.player.vel.clamp_len(315.0 * weapon.move_scale);
         }
 
         self.player.pos += self.player.vel * dt;
@@ -861,15 +1216,21 @@ impl Game {
             self.player.vel.y = self.player.vel.y.min(0.0);
         }
 
-        let w = self.player.weapon;
-        if input.shoot
+        let want_fire = match weapon.fire {
+            FireMode::Semi => input.shoot && !self.trigger_held,
+            FireMode::Auto | FireMode::Melee => input.shoot,
+        };
+        self.trigger_held = input.shoot;
+
+        if want_fire
             && self.click_guard <= 0.0
             && self.player.dash_time <= 0.0
             && self.player.reload[w] <= 0.0
+            && self.player.cooldown[w] <= 0.0
         {
-            if self.player.ammo[w] == 0 {
-                self.player.reload[w] = WEAPONS[w].reload_time;
-            } else if self.player.cooldown[w] <= 0.0 {
+            if weapon.kind != WeaponKind::Melee && self.player.ammo[w] == 0 {
+                self.player.reload[w] = weapon.reload_time;
+            } else {
                 self.fire_weapon(w);
             }
         }
@@ -890,21 +1251,51 @@ impl Game {
         }
     }
 
-    fn fire_weapon(&mut self, wi: usize) {
-        let weapon = WEAPONS[wi];
-        if self.player.ammo[wi] == 0 {
+    fn select_weapon(&mut self, index: usize) {
+        if index >= WEAPON_COUNT || index == self.player.weapon {
             return;
         }
-        self.player.ammo[wi] -= 1;
+        self.player.weapon = index;
+        // A fresh weapon should not fire just because the trigger is already
+        // held down: semi-automatic guns wait for the next pull.
+        self.trigger_held = true;
+        let color = WEAPONS[index].color;
+        self.spark(self.player.pos, color, 6, 130.0);
+        self.play_centered(Sfx::Swap, 0.55);
+    }
+
+    fn fire_weapon(&mut self, wi: usize) {
+        let weapon = WEAPONS[wi];
+        if weapon.kind != WeaponKind::Melee {
+            if self.player.ammo[wi] == 0 {
+                return;
+            }
+            self.player.ammo[wi] -= 1;
+        }
         self.player.cooldown[wi] = weapon.delay;
-        self.play_centered(
-            if wi == 0 { Sfx::Rifle } else { Sfx::Shotgun },
-            if wi == 0 { 0.65 } else { 0.80 },
-        );
-        self.player.muzzle = 0.06;
+        self.play_centered(weapon.sound, weapon.gain);
         self.player.vel -= Vec2::from_angle(self.player.aim) * (weapon.knock * 0.06);
         self.shake = self.shake.max(weapon.shake);
 
+        match weapon.kind {
+            WeaponKind::Melee => self.melee_attack(weapon),
+            WeaponKind::Heavy | WeaponKind::Explosive => self.fire_projectile(weapon),
+            _ => self.fire_bullets(weapon),
+        }
+
+        // Every gunshot is heard; the knife is silent.
+        if weapon.loudness > 0.0 {
+            self.alert_enemies(self.player.pos, weapon.loudness);
+        }
+
+        if weapon.kind != WeaponKind::Melee && self.player.ammo[wi] == 0 {
+            self.player.reload[wi] = weapon.reload_time;
+            self.play_centered(Sfx::Reload, 0.50);
+        }
+    }
+
+    fn fire_bullets(&mut self, weapon: Weapon) {
+        self.player.muzzle = 0.06;
         let dir = Vec2::from_angle(self.player.aim);
         let muzzle = self.player.pos + dir * (self.player.r + 17.0);
         for _ in 0..weapon.pellets {
@@ -918,15 +1309,93 @@ impl Game {
                 life: 1.4,
                 color: weapon.color,
                 from_player: true,
+                pierce: weapon.pierce,
             };
             self.bullets.push(b);
         }
         self.spawn_burst(muzzle, weapon.color, 4 + weapon.pellets as usize, 220.0, 2.0);
+    }
 
-        if self.player.ammo[wi] == 0 {
-            self.player.reload[wi] = weapon.reload_time;
-            self.play_centered(Sfx::Reload, 0.50);
+    fn fire_projectile(&mut self, weapon: Weapon) {
+        let Some(spec) = weapon.projectile else {
+            return;
+        };
+        self.player.muzzle = 0.08;
+        let dir = Vec2::from_angle(self.player.aim);
+        let muzzle = self.player.pos + dir * (self.player.r + 18.0);
+        self.projectiles.push(Projectile {
+            pos: muzzle,
+            vel: dir * spec.speed,
+            r: spec.r,
+            life: spec.fuse,
+            max_life: spec.fuse,
+            color: weapon.color,
+            kind: spec.kind,
+            blast: spec.blast,
+            bounce: spec.bounce,
+            drag: spec.drag,
+            spin: 0.0,
+        });
+        self.spawn_burst(muzzle, weapon.color, 8, 180.0, 2.0);
+    }
+
+    /// The knife hits every enemy inside a short cone. Unaware enemies die
+    /// instantly and silently; alerted ones just take damage.
+    fn melee_attack(&mut self, weapon: Weapon) {
+        self.player.slash = 0.18;
+        self.player.slash_angle = self.player.aim;
+        let aim = Vec2::from_angle(self.player.aim);
+        let mut alerted_hits: Vec<usize> = Vec::new();
+        let mut stealth_kills: Vec<usize> = Vec::new();
+        let mut hit_pos = self.player.pos + aim * (self.player.r + 20.0);
+
+        for i in 0..self.enemies.len() {
+            let e = &self.enemies[i];
+            if e.spawn > 0.0 || e.hp <= 0.0 {
+                continue;
+            }
+            let delta = e.pos - self.player.pos;
+            let dist = delta.len();
+            if dist > self.player.r + weapon.melee_range + e.r {
+                continue;
+            }
+            let angle = (delta.angle() - self.player.aim).abs();
+            if angle > weapon.melee_arc {
+                continue;
+            }
+            hit_pos = e.pos;
+            if !e.alerted {
+                stealth_kills.push(i);
+            } else {
+                alerted_hits.push(i);
+            }
         }
+
+        for &i in &alerted_hits {
+            if i < self.enemies.len() {
+                let er = self.enemies[i].r.max(12.0);
+                self.enemies[i].hp -= weapon.damage;
+                self.enemies[i].hit_flash = 0.2;
+                self.enemies[i].alerted = true;
+                self.enemies[i].awareness = 1.0;
+                self.enemies[i].vel += aim * (1800.0 / er);
+            }
+        }
+        let dead: Vec<usize> = alerted_hits
+            .into_iter()
+            .filter(|&i| i < self.enemies.len() && self.enemies[i].hp <= 0.0)
+            .collect();
+        for &i in dead.iter().rev() {
+            self.remove_enemy(i, true, false);
+        }
+        for &i in stealth_kills.iter().rev() {
+            self.remove_enemy(i, true, true);
+        }
+
+        if stealth_kills.is_empty() {
+            self.alert_enemies(self.player.pos, 110.0);
+        }
+        self.spawn_burst(hit_pos, weapon.color, 8, 150.0, 1.6);
     }
 
     // -- spawning -----------------------------------------------------------
@@ -1013,6 +1482,10 @@ impl Game {
             aim: 0.0,
             spawn: 0.5,
             strafe: if self.rng.chance(0.5) { 1.0 } else { -1.0 },
+            alerted: false,
+            awareness: 0.0,
+            wander: self.rng.range(-1.5, 1.5),
+            wander_t: self.rng.range(0.9, 2.4),
         });
         self.shockwaves.push(Shockwave {
             pos,
@@ -1116,6 +1589,171 @@ fn load_high_score() -> u32 {
 pub(super) fn save_high_score(value: u32) {
     if let Some(p) = high_score_path() {
         let _ = std::fs::write(p, value.to_string());
+    }
+}
+
+#[cfg(test)]
+mod weapon_tests {
+    use super::*;
+
+    fn dummy_enemy(pos: Vec2, kind: EnemyKind) -> Enemy {
+        let (hp, r, speed, _) = kind.base();
+        Enemy {
+            kind,
+            pos,
+            vel: Vec2::ZERO,
+            r,
+            hp,
+            max_hp: hp,
+            speed,
+            hit_flash: 0.0,
+            fire_cd: 1.0,
+            touch_cd: 0.0,
+            phase: 0.0,
+            aim: 0.0,
+            spawn: 0.0,
+            strafe: 0.0,
+            alerted: false,
+            awareness: 0.0,
+            wander: 0.0,
+            wander_t: 1.0,
+        }
+    }
+
+    fn quiet_game() -> Game {
+        let mut game = Game::new();
+        game.settings = Settings::default();
+        game.start_run();
+        game.enemies.clear();
+        game.bullets.clear();
+        game.projectiles.clear();
+        game.particles.clear();
+        game.popups.clear();
+        game.pickups.clear();
+        game
+    }
+
+    #[test]
+    fn every_weapon_category_is_present_and_distinct() {
+        assert_eq!(WEAPONS.len(), WEAPON_KINDS.len());
+        for (weapon, kind) in WEAPONS.iter().zip(WEAPON_KINDS.iter()) {
+            assert_eq!(weapon.kind, *kind);
+        }
+
+        // Fire mode, magazine, cadence, damage and projectile use must differ
+        // between the nine categories.
+        let mut signatures = Vec::new();
+        for w in WEAPONS.iter() {
+            signatures.push((
+                w.fire as u8,
+                w.mag,
+                (w.delay * 1000.0) as u32,
+                w.damage as u32,
+                w.projectile.is_some(),
+            ));
+        }
+        signatures.sort_unstable();
+        assert!(
+            signatures.windows(2).all(|pair| pair[0] != pair[1]),
+            "weapon categories must have distinct characteristics"
+        );
+
+        assert!(SNIPER.pierce >= 3, "sniper rounds must pierce a line");
+        assert_eq!(MACHINE_GUN.mag, 100);
+        assert!(HEAVY.projectile.is_some(), "heavy slot needs a launcher");
+        assert!(EXPLOSIVE.projectile.is_some(), "explosive slot needs a throwable");
+        assert!(MELEE.melee_range > 0.0);
+        assert_eq!(MELEE.loudness, 0.0);
+    }
+
+    #[test]
+    fn number_keys_select_each_weapon() {
+        let mut game = Game::new();
+        game.settings = Settings::default();
+        game.start_run();
+        for index in 0..WEAPON_COUNT {
+            game.update(
+                1.0 / 60.0,
+                &Input {
+                    select: Some(index),
+                    ..Input::default()
+                },
+            );
+            assert_eq!(game.player.weapon, index);
+        }
+    }
+
+    #[test]
+    fn the_knife_quietly_removes_an_unaware_enemy() {
+        let mut game = quiet_game();
+        game.player.aim = 0.0;
+        game.player.weapon = 8;
+        game.enemies.push(dummy_enemy(
+            game.player.pos + Vec2::new(36.0, 0.0),
+            EnemyKind::Grunt,
+        ));
+        game.enemies.push(dummy_enemy(
+            game.player.pos + Vec2::new(-280.0, 0.0),
+            EnemyKind::Runner,
+        ));
+
+        game.fire_weapon(8);
+
+        assert_eq!(game.enemies.len(), 1, "the target in the arc should die");
+        assert!(
+            !game.enemies[0].alerted,
+            "a silent kill must not wake a nearby bystander"
+        );
+        assert!(game.bullets.is_empty());
+        assert!(game.projectiles.is_empty());
+        assert_eq!(game.kills, 1);
+    }
+
+    #[test]
+    fn loud_weapons_wake_unaware_enemies() {
+        let mut game = quiet_game();
+        game.player.aim = 0.0;
+        game.enemies.push(dummy_enemy(
+            game.player.pos + Vec2::new(260.0, 0.0),
+            EnemyKind::Grunt,
+        ));
+
+        game.fire_weapon(3);
+
+        assert!(
+            game.enemies[0].alerted,
+            "a rifle shot should alert enemies inside its loudness radius"
+        );
+    }
+
+    #[test]
+    fn thrown_grenades_deal_area_damage() {
+        let mut game = quiet_game();
+        let center = game.player.pos + Vec2::new(0.0, -240.0);
+        game.enemies
+            .push(dummy_enemy(center, EnemyKind::Grunt));
+        let blast = EXPLOSIVE.projectile.expect("grenade spec").blast;
+        game.projectiles.push(Projectile {
+            pos: center,
+            vel: Vec2::ZERO,
+            r: 5.0,
+            life: 0.001,
+            max_life: 1.0,
+            color: EXPLOSIVE.color,
+            kind: ProjectileKind::Grenade,
+            blast,
+            bounce: false,
+            drag: 0.0,
+            spin: 0.0,
+        });
+
+        game.update_projectiles(0.01);
+
+        assert!(
+            game.enemies.is_empty(),
+            "an enemy standing on the grenade should be destroyed"
+        );
+        assert!(game.shockwaves.iter().any(|s| s.color == blast.color));
     }
 }
 

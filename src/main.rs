@@ -191,6 +191,32 @@ fn run() -> Result<(), minifb::Error> {
         }
 
         let left = window.get_mouse_down(MouseButton::Left);
+        let mut select = None;
+        for (key, index) in [
+            (Key::Key1, 0),
+            (Key::Key2, 1),
+            (Key::Key3, 2),
+            (Key::Key4, 3),
+            (Key::Key5, 4),
+            (Key::Key6, 5),
+            (Key::Key7, 6),
+            (Key::Key8, 7),
+            (Key::Key9, 8),
+            (Key::NumPad1, 0),
+            (Key::NumPad2, 1),
+            (Key::NumPad3, 2),
+            (Key::NumPad4, 3),
+            (Key::NumPad5, 4),
+            (Key::NumPad6, 5),
+            (Key::NumPad7, 6),
+            (Key::NumPad8, 7),
+            (Key::NumPad9, 8),
+        ] {
+            if window.is_key_pressed(key, KeyRepeat::No) {
+                select = Some(index);
+            }
+        }
+
         let input = Input {
             mouse,
             up: window.is_key_down(Key::W) || window.is_key_down(Key::Up),
@@ -203,6 +229,7 @@ fn run() -> Result<(), minifb::Error> {
                 || window.is_key_down(Key::Space),
             reload: window.is_key_pressed(Key::R, KeyRepeat::No),
             swap: window.is_key_pressed(Key::Q, KeyRepeat::No),
+            select,
             press_start: window.is_key_pressed(Key::Enter, KeyRepeat::No)
                 || window.is_key_pressed(Key::Space, KeyRepeat::No),
             press_pause: window.is_key_pressed(Key::P, KeyRepeat::No)
@@ -282,8 +309,16 @@ fn audio_test() {
     }
 
     let effects = [
+        Sfx::Pistol,
+        Sfx::Smg,
         Sfx::Rifle,
         Sfx::Shotgun,
+        Sfx::Sniper,
+        Sfx::Rocket,
+        Sfx::Explosion,
+        Sfx::Throw,
+        Sfx::Melee,
+        Sfx::Stealth,
         Sfx::EnemyShot,
         Sfx::Hit,
         Sfx::Kill,
@@ -354,6 +389,9 @@ fn smoke_test() {
         input.dash = frame % 150 == 0;
         input.reload = frame % 300 == 0;
         input.swap = frame % 420 == 0;
+        // Keep rotating through all nine weapon categories so the smoke test
+        // exercises bullets, launchers, grenades and the knife.
+        input.select = Some((frame / 120) % game::WEAPON_COUNT);
 
         if frame == 900 && game.state() == State::Playing {
             input.press_pause = true;

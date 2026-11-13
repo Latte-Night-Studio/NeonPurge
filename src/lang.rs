@@ -71,8 +71,11 @@ pub struct Text {
     pub reloading: &'static str,
     pub sound_off: &'static str,
     pub hint: &'static str,
-    pub rifle: &'static str,
-    pub shotgun: &'static str,
+    pub ready: &'static str,
+    pub silent: &'static str,
+    /// Weapon names and their one-line battlefield role, in slot order.
+    pub weapons: [&'static str; 9],
+    pub roles: [&'static str; 9],
 
     // Banners and screens.
     pub paused: &'static str,
@@ -104,7 +107,7 @@ pub const EN: Text = Text {
         ("LEFT MOUSE", "FIRE"),
         ("SHIFT / SPACE", "DASH"),
         ("R", "RELOAD"),
-        ("Q", "SWAP WEAPON"),
+        ("1-9 / Q", "SWAP WEAPON"),
         ("P / ESC", "PAUSE"),
         ("M", "SOUND"),
     ],
@@ -134,9 +137,31 @@ pub const EN: Text = Text {
     dash: "DASH",
     reloading: "RELOADING",
     sound_off: "SOUND OFF",
-    hint: "WASD MOVE   LMB FIRE   SHIFT DASH   R RELOAD   Q WEAPON   P PAUSE   M SOUND",
-    rifle: "RIFLE",
-    shotgun: "SHOTGUN",
+    hint: "WASD MOVE   LMB FIRE   SHIFT DASH   R RELOAD   1-9/Q WEAPON   P PAUSE   M SOUND",
+    ready: "READY",
+    silent: "SILENT KILL",
+    weapons: [
+        "PISTOL",
+        "SMG",
+        "SHOTGUN",
+        "ASSAULT RIFLE",
+        "SNIPER RIFLE",
+        "MACHINE GUN",
+        "ROCKET LAUNCHER",
+        "GRENADES",
+        "KNIFE",
+    ],
+    roles: [
+        "PRECISE",
+        "RAPID FIRE",
+        "CLOSE RANGE",
+        "ALL-ROUND",
+        "PIERCES 4",
+        "100 ROUNDS",
+        "ROCKET + BLAST",
+        "GRENADE + BLAST",
+        "SILENT KILL",
+    ],
 
     paused: "PAUSED",
     died: "YOU DIED",
@@ -167,7 +192,7 @@ pub const UK: Text = Text {
         ("ЛКМ", "ВОГОНЬ"),
         ("SHIFT / SPACE", "РИВОК"),
         ("R", "ПЕРЕЗАРЯДКА"),
-        ("Q", "ЗБРОЯ"),
+        ("1-9 / Q", "ЗБРОЯ"),
         ("P / ESC", "ПАУЗА"),
         ("M", "ЗВУК"),
     ],
@@ -197,9 +222,31 @@ pub const UK: Text = Text {
     dash: "РИВОК",
     reloading: "ПЕРЕЗАРЯДКА",
     sound_off: "ЗВУК ВИМК",
-    hint: "WASD РУХ   ЛКМ ВОГОНЬ   SHIFT РИВОК   R ПЕРЕЗАРЯДКА   Q ЗБРОЯ   P ПАУЗА   M ЗВУК",
-    rifle: "ГВИНТІВКА",
-    shotgun: "ДРОБОВИК",
+    hint: "WASD РУХ   ЛКМ ВОГОНЬ   SHIFT РИВОК   R ПЕРЕЗАРЯДКА   1-9/Q ЗБРОЯ   P ПАУЗА   M ЗВУК",
+    ready: "ГОТОВО",
+    silent: "ТИХЕ ВБИВСТВО",
+    weapons: [
+        "ПІСТОЛЕТ",
+        "ПІСТОЛЕТ-КУЛЕМЕТ",
+        "ДРОБОВИК",
+        "ШТУРМОВА ГВИНТІВКА",
+        "СНАЙПЕРСЬКА ГВИНТІВКА",
+        "КУЛЕМЕТ",
+        "РАКЕТНИЦЯ",
+        "ГРАНАТИ",
+        "НІЖ",
+    ],
+    roles: [
+        "ТОЧНИЙ",
+        "ШВИДКИЙ ВОГОНЬ",
+        "БЛИЖНІЙ БІЙ",
+        "УНІВЕРСАЛ",
+        "ПРОБИВАЄ 4",
+        "100 ПАТРОНІВ",
+        "РАКЕТА + ВИБУХ",
+        "ГРАНАТА + ВИБУХ",
+        "ТИХЕ ВБИВСТВО",
+    ],
 
     paused: "ПАУЗА",
     died: "ВАС ЗНИЩЕНО",
@@ -259,8 +306,8 @@ impl Text {
             self.reloading,
             self.sound_off,
             self.hint,
-            self.rifle,
-            self.shotgun,
+            self.ready,
+            self.silent,
             self.paused,
             self.died,
             self.new_record,
@@ -276,6 +323,8 @@ impl Text {
             all.push(keys);
             all.push(action);
         }
+        all.extend(self.weapons);
+        all.extend(self.roles);
         all
     }
 }

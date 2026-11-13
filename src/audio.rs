@@ -12,8 +12,16 @@ const SR: f32 = SAMPLE_RATE as f32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sfx {
+    Pistol,
+    Smg,
     Rifle,
     Shotgun,
+    Sniper,
+    Rocket,
+    Explosion,
+    Throw,
+    Melee,
+    Stealth,
     Hit,
     Kill,
     TankBoom,
@@ -35,8 +43,16 @@ pub enum Sfx {
 impl Sfx {
     fn duration(self) -> f32 {
         match self {
+            Sfx::Pistol => 0.08,
+            Sfx::Smg => 0.06,
             Sfx::Rifle => 0.10,
             Sfx::Shotgun => 0.34,
+            Sfx::Sniper => 0.45,
+            Sfx::Rocket => 0.55,
+            Sfx::Explosion => 0.80,
+            Sfx::Throw => 0.18,
+            Sfx::Melee => 0.16,
+            Sfx::Stealth => 0.22,
             Sfx::Hit => 0.07,
             Sfx::Kill => 0.22,
             Sfx::TankBoom => 0.85,
@@ -220,8 +236,16 @@ fn render(sfx: Sfx, seed: u32) -> Vec<f32> {
     let mut noise = Noise::new(seed);
 
     match sfx {
+        Sfx::Pistol => pistol(&mut out, &mut noise),
+        Sfx::Smg => smg(&mut out, &mut noise),
         Sfx::Rifle => rifle(&mut out, &mut noise),
         Sfx::Shotgun => shotgun(&mut out, &mut noise),
+        Sfx::Sniper => sniper(&mut out, &mut noise),
+        Sfx::Rocket => rocket(&mut out, &mut noise),
+        Sfx::Explosion => explosion(&mut out, &mut noise),
+        Sfx::Throw => throw(&mut out, &mut noise),
+        Sfx::Melee => melee(&mut out, &mut noise),
+        Sfx::Stealth => stealth(&mut out, &mut noise),
         Sfx::Hit => hit(&mut out, &mut noise),
         Sfx::Kill => kill(&mut out, &mut noise),
         Sfx::TankBoom => tank_boom(&mut out, &mut noise),
@@ -248,6 +272,111 @@ fn render(sfx: Sfx, seed: u32) -> Vec<f32> {
         out[n - 1 - i] *= g;
     }
     out
+}
+
+fn pistol(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.08;
+        let f = 110.0 + 320.0 * (1.0 - u).powf(2.4);
+        let body = osc(&mut ph, f) * (-t * 34.0).exp() * 0.44;
+        let crack = noise.next() * (-t * 70.0).exp() * 0.34;
+        *s = (body + crack) * 0.85;
+    }
+}
+
+fn smg(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.06;
+        let f = 130.0 + 380.0 * (1.0 - u).powf(2.0);
+        let body = osc(&mut ph, f) * (-t * 46.0).exp() * 0.36;
+        let tick = noise.next() * (-t * 90.0).exp() * 0.26;
+        *s = (body + tick) * 0.80;
+    }
+}
+
+fn sniper(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    let mut ph2 = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.45;
+        let f = 48.0 + 160.0 * (1.0 - u).powf(2.2);
+        let body = osc(&mut ph, f) * (-t * 4.5).exp() * 0.72;
+        let crack = noise.next() * (-t * 16.0).exp() * 0.55;
+        let ring = osc(&mut ph2, 1850.0) * (-t * 7.0).exp() * 0.10;
+        *s = (body + crack + ring) * 0.82;
+    }
+}
+
+fn rocket(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.55;
+        let f = 70.0 + 210.0 * (1.0 - u).powf(1.4);
+        let launch = osc(&mut ph, f) * (-t * 5.0).exp() * 0.34;
+        let whoosh = noise.next() * (-t * 4.2).exp() * 0.42;
+        *s = (launch + whoosh) * 0.82;
+    }
+}
+
+fn explosion(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.80;
+        let f = 22.0 + 70.0 * (1.0 - u).powf(2.0);
+        let low = osc(&mut ph, f) * (-t * 2.4).exp() * 0.90;
+        let blast = noise.next() * (-t * 3.2).exp() * 0.72;
+        let debris = noise.next() * (-t * 9.0).exp() * 0.22;
+        *s = (low + blast + debris) * 0.78;
+    }
+}
+
+fn throw(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.18;
+        let env = (PI * u).sin().powf(1.4);
+        let f = 320.0 + 520.0 * u;
+        let tone = osc(&mut ph, f) * env * 0.12;
+        let air = noise.next() * env * 0.22;
+        *s = tone + air;
+    }
+}
+
+fn melee(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.16;
+        let env = (PI * u).sin().powf(1.2);
+        let f = 900.0 + 1500.0 * u;
+        let blade = osc(&mut ph, f) * env * 0.10;
+        let swoosh = noise.next() * env * 0.30;
+        *s = blade + swoosh;
+    }
+}
+
+fn stealth(out: &mut [f32], noise: &mut Noise) {
+    let mut ph = 0.0;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SR;
+        let u = t / 0.22;
+        let f = 90.0 + 130.0 * (1.0 - u).powf(1.5);
+        let thud = osc(&mut ph, f) * (-t * 18.0).exp() * 0.30;
+        let tick = if t < 0.012 {
+            noise.next() * (1.0 - t / 0.012) * 0.24
+        } else {
+            0.0
+        };
+        *s = thud + tick;
+    }
 }
 
 fn rifle(out: &mut [f32], noise: &mut Noise) {
@@ -751,9 +880,17 @@ mod platform {
 mod tests {
     use super::*;
 
-    const ALL: [Sfx; 18] = [
+    const ALL: [Sfx; 26] = [
+        Sfx::Pistol,
+        Sfx::Smg,
         Sfx::Rifle,
         Sfx::Shotgun,
+        Sfx::Sniper,
+        Sfx::Rocket,
+        Sfx::Explosion,
+        Sfx::Throw,
+        Sfx::Melee,
+        Sfx::Stealth,
         Sfx::Hit,
         Sfx::Kill,
         Sfx::TankBoom,

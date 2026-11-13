@@ -89,6 +89,39 @@ impl Game {
             c.circle(pos, b.r, rgb(255, 255, 255), 0.9);
         }
 
+        for p in &self.projectiles {
+            let pos = p.pos + cam;
+            let dir = p.vel.norm();
+            match p.kind {
+                ProjectileKind::Rocket => {
+                    c.line(pos - dir * 18.0, pos, p.r * 2.4, p.color, 0.6);
+                    c.glow(pos, 26.0, p.color, 0.85);
+                    c.circle(pos, p.r, p.color, 1.0);
+                    c.circle(pos, p.r * 0.45, C_WHITE, 1.0);
+                }
+                ProjectileKind::Grenade => {
+                    let fuse = (p.life / p.max_life).clamp(0.0, 1.0);
+                    let blink_rate = 7.0 + (1.0 - fuse) * 30.0;
+                    c.glow(pos, 18.0, p.color, 0.45);
+                    c.circle(pos, p.r, rgb(10, 20, 14), 0.95);
+                    c.ring(pos, p.r, 2.0, p.color, 0.95);
+                    let blink = if (p.life * blink_rate).sin() > 0.0 {
+                        1.0
+                    } else {
+                        0.35
+                    };
+                    c.circle(pos, p.r * 0.48, p.color, blink);
+                    c.line(
+                        pos + Vec2::from_angle(p.spin) * (p.r * 0.4),
+                        pos + Vec2::from_angle(p.spin) * (p.r * 1.9),
+                        1.5,
+                        p.color,
+                        0.7,
+                    );
+                }
+            }
+        }
+
         for p in &self.particles {
             let t = (p.life / p.max_life).clamp(0.0, 1.0);
             let pos = p.pos + cam;
@@ -123,6 +156,28 @@ impl Game {
         let color = e.kind.color();
 
         c.glow(pos, r * 2.9, color, 0.28 * alpha);
+
+        if e.spawn <= 0.0 && !e.alerted {
+            // Faint vision cone so the player can read who has noticed them.
+            let spread = 0.6;
+            let reach = 110.0;
+            let a = 0.05 + e.awareness * 0.22;
+            let look = Vec2::from_angle(e.aim);
+            let p1 = pos + Vec2::from_angle(e.aim - spread) * (r + reach);
+            let p2 = pos + Vec2::from_angle(e.aim + spread) * (r + reach);
+            c.triangle(pos, p1, p2, color, a * 0.5);
+            c.line(pos + look * (r + 3.0), p1, 1.0, color, a);
+            c.line(pos + look * (r + 3.0), p2, 1.0, color, a);
+            if e.awareness > 0.04 {
+                c.ring(
+                    pos,
+                    r + 6.0 + (1.0 - e.awareness) * 10.0,
+                    1.5,
+                    C_AMMO,
+                    e.awareness * 0.55,
+                );
+            }
+        }
 
         match e.kind {
             EnemyKind::Grunt => {
@@ -169,6 +224,17 @@ impl Game {
         }
         if e.spawn > 0.0 {
             c.ring(pos, r + 34.0 * e.spawn, 2.0, color, (e.spawn * 1.6).min(1.0));
+        }
+        if e.alerted && e.spawn <= 0.0 {
+            let marker = pos + Vec2::new(0.0, -r - 20.0);
+            c.line(
+                marker,
+                marker + Vec2::new(0.0, 5.5),
+                2.0,
+                C_GRUNT,
+                0.85,
+            );
+            c.circle(marker + Vec2::new(0.0, 9.0), 1.6, C_GRUNT, 0.85);
         }
         if e.hp < e.max_hp && e.spawn <= 0.0 {
             let bw = (e.r * 2.0) as i32;
@@ -227,6 +293,25 @@ impl Game {
             let m = pos + aim * (p.r + 18.0);
             c.glow(m, 26.0, rgb(255, 240, 190), p.muzzle * 7.0);
             c.circle(m, 4.0, rgb(255, 255, 230), (p.muzzle * 14.0).min(1.0));
+        }
+
+        let def = WEAPONS[p.weapon];
+        if p.slash > 0.0 && def.kind == WeaponKind::Melee {
+            let frac = (p.slash / 0.18).clamp(0.0, 1.0);
+            let radius = (p.r + def.melee_range * 0.85) * (0.62 + 0.38 * frac);
+            let arc = def.melee_arc;
+            let steps = 10;
+            let mut prev = pos + Vec2::from_angle(p.slash_angle - arc) * (p.r + 4.0);
+            for i in 1..=steps {
+                let a = p.slash_angle - arc
+                    + 2.0 * arc * i as f32 / steps as f32;
+                let point = pos + Vec2::from_angle(a) * radius;
+                c.line(prev, point, 4.0, rgb(8, 28, 30), frac * 0.7);
+                c.line(prev, point, 2.0, def.color, frac);
+                prev = point;
+            }
+            let tip = pos + Vec2::from_angle(p.slash_angle) * radius;
+            c.glow(tip, 20.0, def.color, frac * 0.5);
         }
         if p.hurt_flash > 0.0 {
             c.circle(pos, p.r + 6.0, rgb(255, 60, 80), p.hurt_flash * 0.5);
@@ -343,17 +428,25 @@ impl Game {
         // Weapon panel.
         let w = self.player.weapon;
         let def = WEAPONS[w];
-        let name = if w == 0 { text.rifle } else { text.shotgun };
+        let name = text.weapons[w];
+        let role = text.roles[w];
         let nw = c.text_width(name, 2);
-        c.text_shadow(name, W - 48 - nw, H - 152, 2, C_WHITE, 0.85);
+        c.text_shadow(name, W - 48 - nw, H - 178, 2, C_WHITE, 0.9);
+        let rw = c.text_width(role, 1);
+        c.text(role, W - 48 - rw, H - 160, 1, def.color, 0.9);
 
+        let melee = def.kind == WeaponKind::Melee;
         let reloading = self.player.reload[w] > 0.0;
-        let ammo_text = if reloading {
+        let ammo_text = if melee {
+            text.ready.to_string()
+        } else if reloading {
             text.reloading.to_string()
         } else {
             format!("{} / {}", self.player.ammo[w], def.mag)
         };
-        let ammo_col = if reloading {
+        let ammo_col = if melee {
+            def.color
+        } else if reloading {
             rgb(255, 190, 80)
         } else if self.player.ammo[w] == 0 {
             rgb(255, 80, 100)
@@ -361,40 +454,61 @@ impl Game {
             C_WHITE
         };
         let aw = c.text_width(&ammo_text, 4);
-        c.text_shadow(&ammo_text, W - 48 - aw, H - 128, 4, ammo_col, 1.0);
+        c.text_shadow(&ammo_text, W - 48 - aw, H - 136, 4, ammo_col, 1.0);
 
-        c.rect(W - 268, H - 82, 220, 6, rgb(18, 22, 30));
-        if reloading {
+        c.rect(W - 268, H - 96, 220, 6, rgb(18, 22, 30));
+        if melee {
+            let pulse = 0.55 + 0.45 * (self.time * 3.0).sin();
+            c.rect(W - 268, H - 96, 220, 6, lerp_color(rgb(20, 40, 40), def.color, pulse));
+        } else if reloading {
             let frac = (1.0 - self.player.reload[w] / def.reload_time).clamp(0.0, 1.0);
-            c.rect(W - 268, H - 82, (220.0 * frac) as i32, 6, rgb(255, 190, 80));
+            c.rect(W - 268, H - 96, (220.0 * frac) as i32, 6, rgb(255, 190, 80));
         } else {
-            let frac = self.player.ammo[w] as f32 / def.mag as f32;
+            let frac = self.player.ammo[w] as f32 / def.mag.max(1) as f32;
             c.rect(
                 W - 268,
-                H - 82,
+                H - 96,
                 (220.0 * frac) as i32,
                 6,
                 lerp_color(rgb(255, 90, 110), C_ACCENT, frac),
             );
         }
 
-        // Weapon slots.
+        // Weapon slots, one per category. The number is the selection key.
+        let slot_w = 26;
+        let slot_gap = 4;
+        let total_w = WEAPON_COUNT as i32 * (slot_w + slot_gap) - slot_gap;
+        let sx0 = W - 48 - total_w;
+        let sy = H - 70;
         for (i, slot) in WEAPONS.iter().enumerate() {
-            let sx = W - 48 - 2 * 34 + i as i32 * 34;
-            let sy = H - 58;
+            let sx = sx0 + i as i32 * (slot_w + slot_gap);
             let active = i == w;
-            c.rect(sx, sy, 28, 16, if active { rgb(30, 46, 58) } else { rgb(16, 20, 28) });
+            c.rect(
+                sx,
+                sy,
+                slot_w,
+                18,
+                if active { rgb(30, 46, 58) } else { rgb(16, 20, 28) },
+            );
             if active {
-                c.rect_outline(sx, sy, 28, 16, 1, def.color, 0.9);
+                c.rect_outline(sx, sy, slot_w, 18, 1, slot.color, 0.95);
             }
-            let label = format!("{}", slot.mag);
+            c.rect_blend(
+                sx + 3,
+                sy + 14,
+                slot_w - 6,
+                2,
+                slot.color,
+                if active { 0.9 } else { 0.35 },
+            );
+            let label = format!("{}", i + 1);
             let lw = c.text_width(&label, 1);
             c.text(
                 &label,
-                sx + (28 - lw) / 2,
-                sy + 5,
+                sx + (slot_w - lw) / 2,
+                sy + 4,
                 1,
-                if active { C_WHITE } else { rgb(90, 100, 115) },
+                if active { C_WHITE } else { rgb(100, 112, 130) },
                 0.9,
             );
         }
