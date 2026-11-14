@@ -1,0 +1,23 @@
+[package]
+name = "neon-purge-android"
+version = "1.4.0"
+edition = "2021"
+description = "Android touch port of Neon Purge"
+publish = false
+
+[lib]
+name = "neon_purge"
+crate-type = ["cdylib"]
+
+[dependencies]
+android-activity = { version = "0.6", default-features = false, features = ["native-activity"] }
+ndk = { version = "0.9", features = ["audio", "nativewindow", "api-level-26"] }
+
+# The game already renders its own pixels, so the NDK build only needs a fast
+# release profile.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

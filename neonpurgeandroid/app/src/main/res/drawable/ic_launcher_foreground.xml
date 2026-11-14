@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Neon ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#2E7A9E"
+        android:strokeWidth="2"
+        android:pathData="M54,20 A34,34 0 1,1 53.9,20" />
+
+    <!-- Player hexagon -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#50FFD2"
+        android:strokeWidth="4"
+        android:strokeLineJoin="round"
+        android:pathData="M54,29 L75.7,41.5 L75.7,66.5 L54,79 L32.3,66.5 L32.3,41.5 Z" />
+
+    <!-- Core -->
+    <path
+        android:fillColor="#FF3E82"
+        android:pathData="M54,42 L66,54 L54,66 L42,54 Z" />
+
+    <!-- Muzzle spark -->
+    <path
+        android:fillColor="#EEF6FF"
+        android:pathData="M52,22 L56,22 L56,30 L52,30 Z" />
+</vector>

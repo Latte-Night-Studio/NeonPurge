@@ -378,7 +378,12 @@ impl Game {
 
         if self.run_time < 14.0 {
             let a = (1.0 - self.run_time / 14.0).clamp(0.0, 1.0) * 0.75;
-            c.text_center(text.hint, W / 2, 196, 2, rgb(140, 165, 190), a);
+            let hint = if cfg!(target_os = "android") {
+                text.hint_touch
+            } else {
+                text.hint
+            };
+            c.text_center(hint, W / 2, 196, 2, rgb(140, 165, 190), a);
         }
 
         // Health.
@@ -668,9 +673,15 @@ impl Game {
         c.text_center(text.subtitle, W / 2, 156, 2, C_DIM, 0.95);
         c.rect(W / 2 - 320, 188, 640, 1, rgb(40, 60, 90));
 
-        // Controls, left column.
+        // Controls, left column. The touch build swaps the keyboard list for
+        // its on-screen stick and button layout.
+        let controls = if cfg!(target_os = "android") {
+            &text.controls_touch
+        } else {
+            &text.controls
+        };
         let controls_y = 252;
-        for (i, (keys, action)) in text.controls.iter().enumerate() {
+        for (i, (keys, action)) in controls.iter().enumerate() {
             let y = controls_y + i as i32 * 34;
             c.text(keys, 110, y, 2, C_ACCENT, 0.85);
             let w = c.text_width(keys, 2);
@@ -691,12 +702,22 @@ impl Game {
         }
 
         let hint_y = buttons[2].0.y + buttons[2].0.h + 34;
-        c.text_center(text.start_hint, buttons[0].0.cx(), hint_y, 2, rgb(110, 130, 155), 0.8);
+        let start_hint = if cfg!(target_os = "android") {
+            text.start_hint_touch
+        } else {
+            text.start_hint
+        };
+        c.text_center(start_hint, buttons[0].0.cx(), hint_y, 2, rgb(110, 130, 155), 0.8);
 
         let best = format!("{} {:06}", text.best, self.high_score);
         let bw = c.text_width(&best, 2);
         c.text_shadow(&best, W - 48 - bw, 40, 2, C_DIM, 0.85);
-        c.text_center(text.esc_hint, W / 2, H - 46, 1, rgb(85, 100, 120), 0.65);
+        let footer = if cfg!(target_os = "android") {
+            text.footer_touch
+        } else {
+            text.esc_hint
+        };
+        c.text_center(footer, W / 2, H - 46, 1, rgb(85, 100, 120), 0.65);
     }
 
     fn draw_pause(&self, c: &mut Canvas) {
@@ -716,8 +737,13 @@ impl Game {
             };
             self.draw_button(c, *rect, label, 3, hovered, pressed, false);
         }
+        let resume_hint = if cfg!(target_os = "android") {
+            text.resume_hint_touch
+        } else {
+            text.esc_resume
+        };
         c.text_center(
-            text.esc_resume,
+            resume_hint,
             W / 2,
             buttons[3].0.y + buttons[3].0.h + 26,
             1,
@@ -775,8 +801,13 @@ impl Game {
             };
             self.draw_button(c, *rect, label, 3, hovered, pressed, false);
         }
+        let menu_hint = if cfg!(target_os = "android") {
+            text.menu_hint_touch
+        } else {
+            text.esc_menu
+        };
         c.text_center(
-            text.esc_menu,
+            menu_hint,
             W / 2,
             buttons[2].0.y + buttons[2].0.h + 25,
             1,
@@ -796,39 +827,42 @@ impl Game {
         c.text_center_shadow(text.settings, W / 2, panel.y + 34, 5, C_WHITE, 1.0);
 
         // Display mode.
-        c.text_center(text.display_mode, W / 2, 140, 2, C_DIM, 0.95);
-        for (rect, action) in ui::settings_display_buttons().iter() {
-            let (hovered, pressed) = self.hovered_pressed(*rect);
-            let (label, selected) = match action {
-                Action::Display(mode) => {
-                    let label = match mode {
-                        DisplayMode::Windowed => text.windowed,
-                        DisplayMode::Borderless => text.borderless,
-                        DisplayMode::Fullscreen => text.fullscreen,
-                    };
-                    (label, *mode == self.settings.display)
-                }
-                _ => ("", false),
-            };
-            self.draw_button(c, *rect, label, 2, hovered, pressed, selected);
-        }
+        if !cfg!(target_os = "android") {
+            c.text_center(text.display_mode, W / 2, 140, 2, C_DIM, 0.95);
+            for (rect, action) in ui::settings_display_buttons().iter() {
+                let (hovered, pressed) = self.hovered_pressed(*rect);
+                let (label, selected) = match action {
+                    Action::Display(mode) => {
+                        let label = match mode {
+                            DisplayMode::Windowed => text.windowed,
+                            DisplayMode::Borderless => text.borderless,
+                            DisplayMode::Fullscreen => text.fullscreen,
+                        };
+                        (label, *mode == self.settings.display)
+                    }
+                    _ => ("", false),
+                };
+                self.draw_button(c, *rect, label, 2, hovered, pressed, selected);
+            }
 
-        // Resolution.
-        c.text_center(text.resolution, W / 2, 252, 2, C_DIM, 0.95);
-        for (rect, action) in ui::settings_resolution_buttons().iter() {
-            let (hovered, pressed) = self.hovered_pressed(*rect);
-            let (label, selected) = match action {
-                Action::Resolution(resolution) => {
-                    (resolution.label(), *resolution == self.settings.resolution)
-                }
-                _ => (String::new(), false),
-            };
-            self.draw_button(c, *rect, &label, 2, hovered, pressed, selected);
+            // Resolution.
+            c.text_center(text.resolution, W / 2, 252, 2, C_DIM, 0.95);
+            for (rect, action) in ui::settings_resolution_buttons().iter() {
+                let (hovered, pressed) = self.hovered_pressed(*rect);
+                let (label, selected) = match action {
+                    Action::Resolution(resolution) => {
+                        (resolution.label(), *resolution == self.settings.resolution)
+                    }
+                    _ => (String::new(), false),
+                };
+                self.draw_button(c, *rect, &label, 2, hovered, pressed, selected);
+            }
+            c.text_center(text.resolution_note, W / 2, 338, 1, rgb(100, 120, 145), 0.8);
         }
-        c.text_center(text.resolution_note, W / 2, 338, 1, rgb(100, 120, 145), 0.8);
 
         // Language.
-        c.text_center(text.language, W / 2, 358, 2, C_DIM, 0.95);
+        let lang_y = if cfg!(target_os = "android") { 258 } else { 358 };
+        c.text_center(text.language, W / 2, lang_y, 2, C_DIM, 0.95);
         for (rect, action) in ui::settings_language_buttons().iter() {
             let (hovered, pressed) = self.hovered_pressed(*rect);
             let (label, selected) = match action {
@@ -845,7 +879,8 @@ impl Game {
         }
 
         // Sound.
-        c.text_center(text.sound, W / 2, 466, 2, C_DIM, 0.95);
+        let sound_y = if cfg!(target_os = "android") { 392 } else { 466 };
+        c.text_center(text.sound, W / 2, sound_y, 2, C_DIM, 0.95);
         for (rect, action) in ui::settings_sound_buttons().iter() {
             let (hovered, pressed) = self.hovered_pressed(*rect);
             let (label, selected) = match action {
@@ -861,8 +896,13 @@ impl Game {
         let (back, _) = ui::settings_back_button();
         let (hovered, pressed) = self.hovered_pressed(back);
         self.draw_button(c, back, text.back, 3, hovered, pressed, false);
+        let back_hint = if cfg!(target_os = "android") {
+            text.back_hint_touch
+        } else {
+            text.esc_back
+        };
         c.text_center(
-            text.esc_back,
+            back_hint,
             W / 2,
             back.y + back.h + 14,
             1,

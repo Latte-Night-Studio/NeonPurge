@@ -122,7 +122,9 @@ pub fn settings_resolution_buttons() -> [(Rect, Action); 5] {
 }
 
 pub fn settings_language_buttons() -> [(Rect, Action); 2] {
-    let y = 392;
+    // The Android screen skips the display and resolution rows, so the
+    // remaining controls move up into the free space.
+    let y = if cfg!(target_os = "android") { 292 } else { 392 };
     let w = 280;
     let h = 48;
     [
@@ -132,7 +134,7 @@ pub fn settings_language_buttons() -> [(Rect, Action); 2] {
 }
 
 pub fn settings_sound_buttons() -> [(Rect, Action); 2] {
-    let y = 500;
+    let y = if cfg!(target_os = "android") { 426 } else { 500 };
     let w = 200;
     let h = 46;
     [
@@ -142,7 +144,8 @@ pub fn settings_sound_buttons() -> [(Rect, Action); 2] {
 }
 
 pub fn settings_back_button() -> (Rect, Action) {
-    (Rect::new((W - 300) / 2, 580, 300, 50), Action::Back)
+    let y = if cfg!(target_os = "android") { 520 } else { 580 };
+    (Rect::new((W - 300) / 2, y, 300, 50), Action::Back)
 }
 
 #[cfg(test)]

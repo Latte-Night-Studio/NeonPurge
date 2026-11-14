@@ -785,6 +785,19 @@ impl Game {
         (self.score, self.wave, self.kills, self.player.hp)
     }
 
+    /// Current player position in buffer space. Touch controls use it as the
+    /// origin for the aim stick.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn player_pos(&self) -> Vec2 {
+        self.player.pos
+    }
+
+    /// Index of the equipped weapon, for the touch weapon strip.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn weapon_index(&self) -> usize {
+        self.player.weapon
+    }
+
     pub fn drain_sounds(&mut self) -> impl Iterator<Item = SoundEvent> + '_ {
         self.sounds.drain(..)
     }
@@ -900,17 +913,22 @@ impl Game {
             self.close_settings();
             return;
         }
-        if let Some(action) = clicked_action(&ui::settings_display_buttons(), input) {
-            if let Action::Display(mode) = action {
-                self.change_display(mode);
+        // The Android port is always fullscreen and has no window to resize,
+        // so its settings screen only offers language and sound.
+        #[cfg(not(target_os = "android"))]
+        {
+            if let Some(action) = clicked_action(&ui::settings_display_buttons(), input) {
+                if let Action::Display(mode) = action {
+                    self.change_display(mode);
+                }
+                return;
             }
-            return;
-        }
-        if let Some(action) = clicked_action(&ui::settings_resolution_buttons(), input) {
-            if let Action::Resolution(resolution) = action {
-                self.change_resolution(resolution);
+            if let Some(action) = clicked_action(&ui::settings_resolution_buttons(), input) {
+                if let Action::Resolution(resolution) = action {
+                    self.change_resolution(resolution);
+                }
+                return;
             }
-            return;
         }
         if let Some(action) = clicked_action(&ui::settings_language_buttons(), input) {
             if let Action::Language(lang) = action {
@@ -1574,9 +1592,7 @@ fn clicked_action(buttons: &[(Rect, Action)], input: &Input) -> Option<Action> {
 // ---------------------------------------------------------------------------
 
 fn high_score_path() -> Option<std::path::PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    Some(dir.join("neon_purge_highscore.txt"))
+    crate::storage::file("neon_purge_highscore.txt")
 }
 
 fn load_high_score() -> u32 {

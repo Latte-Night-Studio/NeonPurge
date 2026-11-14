@@ -173,9 +173,7 @@ impl Settings {
 }
 
 fn settings_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    Some(dir.join("neon_purge_settings.txt"))
+    crate::storage::file("neon_purge_settings.txt")
 }
 
 #[cfg(test)]

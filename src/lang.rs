@@ -42,8 +42,12 @@ pub struct Text {
     // Title screen.
     pub subtitle: &'static str,
     pub controls: [(&'static str, &'static str); 8],
+    /// Same layout as `controls`, shown by the touch build instead.
+    pub controls_touch: [(&'static str, &'static str); 8],
     pub esc_hint: &'static str,
     pub start_hint: &'static str,
+    pub start_hint_touch: &'static str,
+    pub footer_touch: &'static str,
 
     // Settings.
     pub display_mode: &'static str,
@@ -71,6 +75,14 @@ pub struct Text {
     pub reloading: &'static str,
     pub sound_off: &'static str,
     pub hint: &'static str,
+    pub hint_touch: &'static str,
+    /// Short labels for the on-screen touch buttons.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub reload: &'static str,
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub swap: &'static str,
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub pause: &'static str,
     pub ready: &'static str,
     pub silent: &'static str,
     /// Weapon names and their one-line battlefield role, in slot order.
@@ -88,6 +100,9 @@ pub struct Text {
     pub heal: &'static str,
     pub esc_resume: &'static str,
     pub esc_menu: &'static str,
+    pub resume_hint_touch: &'static str,
+    pub menu_hint_touch: &'static str,
+    pub back_hint_touch: &'static str,
 }
 
 pub const EN: Text = Text {
@@ -111,8 +126,20 @@ pub const EN: Text = Text {
         ("P / ESC", "PAUSE"),
         ("M", "SOUND"),
     ],
+    controls_touch: [
+        ("LEFT STICK", "MOVE"),
+        ("RIGHT STICK", "AIM + FIRE"),
+        ("RELOAD", "RELOAD"),
+        ("DASH", "DASH"),
+        ("SWAP", "NEXT WEAPON"),
+        ("1-9", "WEAPON SLOTS"),
+        ("PAUSE", "PAUSE"),
+        ("SETTINGS", "SOUND / LANGUAGE"),
+    ],
     esc_hint: "ESC QUITS",
     start_hint: "CLICK A BUTTON OR PRESS ENTER",
+    start_hint_touch: "TAP PLAY TO START",
+    footer_touch: "ANDROID BUILD - TOUCH CONTROLS",
 
     display_mode: "DISPLAY MODE",
     windowed: "WINDOWED",
@@ -138,6 +165,10 @@ pub const EN: Text = Text {
     reloading: "RELOADING",
     sound_off: "SOUND OFF",
     hint: "WASD MOVE   LMB FIRE   SHIFT DASH   R RELOAD   1-9/Q WEAPON   P PAUSE   M SOUND",
+    hint_touch: "LEFT STICK MOVE   RIGHT STICK AIM + FIRE   BUTTONS RELOAD / DASH / SWAP",
+    reload: "RELOAD",
+    swap: "SWAP",
+    pause: "PAUSE",
     ready: "READY",
     silent: "SILENT KILL",
     weapons: [
@@ -173,6 +204,9 @@ pub const EN: Text = Text {
     heal: "+30 HP",
     esc_resume: "ESC / P - RESUME",
     esc_menu: "ESC - MAIN MENU",
+    resume_hint_touch: "TAP RESUME TO CONTINUE",
+    menu_hint_touch: "TAP TO RETURN TO THE MENU",
+    back_hint_touch: "TAP BACK TO RETURN",
 };
 
 pub const UK: Text = Text {
@@ -196,8 +230,20 @@ pub const UK: Text = Text {
         ("P / ESC", "ПАУЗА"),
         ("M", "ЗВУК"),
     ],
+    controls_touch: [
+        ("ЛІВИЙ СТИК", "РУХ"),
+        ("ПРАВИЙ СТИК", "ПРИЦІЛ + ВОГОНЬ"),
+        ("ПЕРЕЗАРЯДКА", "ПЕРЕЗАРЯДКА"),
+        ("РИВОК", "РИВОК"),
+        ("ЗБРОЯ", "НАСТУПНА ЗБРОЯ"),
+        ("1-9", "СЛОТИ ЗБРОЇ"),
+        ("ПАУЗА", "ПАУЗА"),
+        ("НАЛАШТУВАННЯ", "ЗВУК / МОВА"),
+    ],
     esc_hint: "ESC - ВИХІД",
     start_hint: "ОБЕРІТЬ ПУНКТ АБО ENTER",
+    start_hint_touch: "ТОРКНІТЬСЯ ГРАТИ",
+    footer_touch: "ANDROID-ВЕРСІЯ - КЕРУВАННЯ ДОТИКОМ",
 
     display_mode: "РЕЖИМ ВІКНА",
     windowed: "ВІКОННИЙ",
@@ -223,6 +269,10 @@ pub const UK: Text = Text {
     reloading: "ПЕРЕЗАРЯДКА",
     sound_off: "ЗВУК ВИМК",
     hint: "WASD РУХ   ЛКМ ВОГОНЬ   SHIFT РИВОК   R ПЕРЕЗАРЯДКА   1-9/Q ЗБРОЯ   P ПАУЗА   M ЗВУК",
+    hint_touch: "ЛІВИЙ СТИК РУХ   ПРАВИЙ СТИК ПРИЦІЛ + ВОГОНЬ   КНОПКИ ПЕРЕЗАРЯДКА / РИВОК / ЗБРОЯ",
+    reload: "ПЕРЕЗАРЯДКА",
+    swap: "ЗБРОЯ",
+    pause: "ПАУЗА",
     ready: "ГОТОВО",
     silent: "ТИХЕ ВБИВСТВО",
     weapons: [
@@ -258,6 +308,9 @@ pub const UK: Text = Text {
     heal: "+30 ЖИТТЯ",
     esc_resume: "ESC / P - ПРОДОВЖИТИ",
     esc_menu: "ESC - ГОЛОВНЕ МЕНЮ",
+    resume_hint_touch: "ТОРКНІТЬСЯ ПРОДОВЖИТИ",
+    menu_hint_touch: "ТОРКНІТЬСЯ, ЩОБ ПОВЕРНУТИСЯ",
+    back_hint_touch: "ТОРКНІТЬСЯ НАЗАД",
 };
 
 pub fn text(lang: Lang) -> &'static Text {
@@ -283,6 +336,8 @@ impl Text {
             self.subtitle,
             self.esc_hint,
             self.start_hint,
+            self.start_hint_touch,
+            self.footer_touch,
             self.display_mode,
             self.windowed,
             self.borderless,
@@ -306,6 +361,10 @@ impl Text {
             self.reloading,
             self.sound_off,
             self.hint,
+            self.hint_touch,
+            self.reload,
+            self.swap,
+            self.pause,
             self.ready,
             self.silent,
             self.paused,
@@ -318,9 +377,16 @@ impl Text {
             self.heal,
             self.esc_resume,
             self.esc_menu,
+            self.resume_hint_touch,
+            self.menu_hint_touch,
+            self.back_hint_touch,
         ];
         for (keys, action) in self.controls.iter() {
             all.push(keys);
+            all.push(action);
+        }
+        for (label, action) in self.controls_touch.iter() {
+            all.push(label);
             all.push(action);
         }
         all.extend(self.weapons);

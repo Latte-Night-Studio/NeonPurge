@@ -863,7 +863,134 @@ mod platform {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+// ---------------------------------------------------------------------------
+// Android AAudio backend
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "android")]
+mod platform {
+    use std::os::raw::c_void;
+    use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
+
+    use ndk::audio::{
+        AudioDirection, AudioFormat, AudioPerformanceMode, AudioSharingMode, AudioStreamBuilder,
+    };
+
+    use super::*;
+
+    const CHANNELS: usize = 2;
+    const BUF_FRAMES: usize = 256;
+    const MAX_VOICES: usize = 56;
+    const MASTER: f32 = 0.90;
+
+    struct Voice {
+        samples: Vec<f32>,
+        pos: usize,
+        left: f32,
+        right: f32,
+    }
+
+    pub fn start(rx: Receiver<Msg>, ready: Sender<bool>) -> Option<JoinHandle<()>> {
+        Some(thread::spawn(move || audio_loop(rx, ready)))
+    }
+
+    fn audio_loop(rx: Receiver<Msg>, ready: Sender<bool>) {
+        // AAudio converts 44.1 kHz to the device rate in the mixer. If the
+        // stream cannot be opened the game simply runs without sound.
+        let opened = AudioStreamBuilder::new().and_then(|builder| {
+            builder
+                .direction(AudioDirection::Output)
+                .format(AudioFormat::PCM_Float)
+                .channel_count(CHANNELS as i32)
+                .sample_rate(SAMPLE_RATE as i32)
+                .performance_mode(AudioPerformanceMode::LowLatency)
+                .sharing_mode(AudioSharingMode::Shared)
+                .buffer_capacity_in_frames((BUF_FRAMES * 8) as i32)
+                .open_stream()
+        });
+        let stream = match opened {
+            Ok(stream) => stream,
+            Err(_) => {
+                let _ = ready.send(false);
+                return;
+            }
+        };
+        if stream.request_start().is_err() {
+            let _ = ready.send(false);
+            return;
+        }
+        let _ = stream.set_buffer_size_in_frames((BUF_FRAMES * 2) as i32);
+        let _ = ready.send(true);
+
+        let mut voices: Vec<Voice> = Vec::new();
+        let mut buf = vec![0.0f32; BUF_FRAMES * CHANNELS];
+
+        'run: loop {
+            loop {
+                match rx.try_recv() {
+                    Ok(Msg::Play {
+                        samples,
+                        pan,
+                        gain,
+                    }) => {
+                        if samples.is_empty() {
+                            continue;
+                        }
+                        if voices.len() >= MAX_VOICES {
+                            voices.remove(0);
+                        }
+                        let (left, right) = pan_gains(pan);
+                        voices.push(Voice {
+                            samples,
+                            pos: 0,
+                            left: left * gain,
+                            right: right * gain,
+                        });
+                    }
+                    Ok(Msg::Quit) | Err(TryRecvError::Disconnected) => break 'run,
+                    Err(TryRecvError::Empty) => break,
+                }
+            }
+
+            fill_buffer(&mut buf, &mut voices);
+            // 100 ms is long enough to ride out scheduling hiccups without
+            // stalling the game if the device stops consuming audio.
+            let written = unsafe {
+                stream.write(
+                    buf.as_ptr() as *const c_void,
+                    BUF_FRAMES as i32,
+                    100_000_000,
+                )
+            };
+            if written.is_err() {
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+
+        let _ = stream.request_stop();
+    }
+
+    fn fill_buffer(buf: &mut [f32], voices: &mut Vec<Voice>) {
+        for frame in buf.chunks_exact_mut(CHANNELS) {
+            let mut left = 0.0f32;
+            let mut right = 0.0f32;
+            for voice in voices.iter_mut() {
+                if let Some(sample) = voice.samples.get(voice.pos) {
+                    left += *sample * voice.left;
+                    right += *sample * voice.right;
+                }
+                voice.pos += 1;
+            }
+            frame[0] = (left * MASTER).tanh();
+            frame[1] = (right * MASTER).tanh();
+        }
+        voices.retain(|voice| voice.pos < voice.samples.len());
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "android")))]
 mod platform {
     use std::sync::mpsc::{Receiver, Sender};
     use std::thread::JoinHandle;

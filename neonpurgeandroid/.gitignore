@@ -1,0 +1,19 @@
+# Rust / Gradle build products.
+/app/build/
+/build/
+/.gradle/
+/target/
+/local.properties
+/app/src/main/jniLibs/
+
+# Signing material never belongs in the repository.
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab
+*.idsig
+
+# IDE noise.
+.idea/
+*.iml

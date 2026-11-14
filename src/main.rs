@@ -21,6 +21,7 @@ mod lang;
 mod math;
 mod platform;
 mod settings;
+mod storage;
 mod ui;
 
 use std::time::{Duration, Instant};
