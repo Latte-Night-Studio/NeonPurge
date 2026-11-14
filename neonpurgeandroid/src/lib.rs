@@ -5,9 +5,9 @@
 //! only replaces the window, the input source and the save-file location.
 //!
 //! The game draws into the same 1280x720 software buffer as the desktop build.
-//! Each frame is letterboxed into the `ANativeWindow` buffer, so phones with
-//! unusual aspect ratios get black bars instead of stretched pixels. Touch
-//! coordinates are mapped through the exact same transform.
+//! Each frame is stretched across the whole `ANativeWindow` buffer, so the
+//! phone's screen is used edge to edge with no black bars. Touch coordinates
+//! are mapped through the exact same transform.
 
 // The shared modules are also compiled into the desktop host, which uses a
 // few helpers (stats, display switching, forced death) that the Android build
@@ -211,7 +211,8 @@ fn sync_surface(window: &NativeWindow, touch: &mut Touch, size: &mut (i32, i32))
     *size = (width, height);
 }
 
-/// Blits the 1280x720 canvas into the native window, preserving aspect ratio.
+/// Blits the 1280x720 canvas into the native window, stretching it to fill the
+/// whole surface. No letterbox bars: the phone screen is used edge to edge.
 struct Presenter {
     xmap: Vec<usize>,
     ymap: Vec<usize>,
@@ -243,48 +244,31 @@ impl Presenter {
         }
         let pixels = unsafe { std::slice::from_raw_parts_mut(bits as *mut u32, stride * height) };
 
-        let scale = (width as f32 / W as f32).min(height as f32 / H as f32);
-        if !scale.is_finite() || scale <= 0.0 {
-            return;
-        }
-        let dst_w = ((W as f32 * scale) as usize).clamp(1, width);
-        let dst_h = ((H as f32 * scale) as usize).clamp(1, height);
-        let off_x = (width - dst_w) / 2;
-        let off_y = (height - dst_h) / 2;
-
-        self.xmap.resize(dst_w, 0);
+        // Every screen column and row samples one canvas column and row, so the
+        // frame covers the whole surface. The scale differs per axis, which is
+        // the price of a true full screen on tall or wide phones.
+        self.xmap.resize(width, 0);
         for (x, slot) in self.xmap.iter_mut().enumerate() {
-            *slot = (x * W as usize / dst_w).min(W as usize - 1);
+            *slot = (x * W as usize / width).min(W as usize - 1);
         }
-        self.ymap.resize(dst_h, 0);
+        self.ymap.resize(height, 0);
         for (y, slot) in self.ymap.iter_mut().enumerate() {
-            *slot = (y * H as usize / dst_h).min(H as usize - 1);
-        }
-
-        const BLACK: u32 = 0xFF00_0000;
-        for row in 0..off_y {
-            pixels[row * stride..(row + 1) * stride].fill(BLACK);
-        }
-        for row in off_y + dst_h..height {
-            pixels[row * stride..(row + 1) * stride].fill(BLACK);
+            *slot = (y * H as usize / height).min(H as usize - 1);
         }
 
         for (dy, &sy) in self.ymap.iter().enumerate() {
-            let row = (off_y + dy) * stride;
-            pixels[row..row + off_x].fill(BLACK);
-            let right = row + off_x + dst_w;
-            pixels[right..row + stride].fill(BLACK);
-
+            let row = dy * stride;
             let src = sy * W as usize;
-            let dst = row + off_x;
             for (dx, &sx) in self.xmap.iter().enumerate() {
                 let colour = canvas.px[src + sx];
                 // The native buffer is RGBA8888 in memory: R, G, B, A bytes.
-                pixels[dst + dx] = 0xFF00_0000
+                pixels[row + dx] = 0xFF00_0000
                     | ((colour & 0xFF) << 16)
                     | (colour & 0x00FF_00)
                     | ((colour >> 16) & 0xFF);
             }
+            // The surface can be wider than the visible area (stride padding).
+            pixels[row + width..row + stride].fill(0xFF00_0000);
         }
     }
 }

@@ -98,9 +98,9 @@ pub struct Touch {
 
     aim_dir: Vec2,
 
-    /// Letterbox transform from screen pixels to buffer pixels.
-    scale: f32,
-    offset: Vec2,
+    /// Full-screen transform from screen pixels to buffer pixels.
+    scale_x: f32,
+    scale_y: f32,
     screen_w: f32,
     screen_h: f32,
 }
@@ -121,8 +121,8 @@ impl Touch {
             press_dash: false,
             select: None,
             aim_dir: Vec2::new(1.0, 0.0),
-            scale: 1.0,
-            offset: Vec2::ZERO,
+            scale_x: 1.0,
+            scale_y: 1.0,
             screen_w: 0.0,
             screen_h: 0.0,
         }
@@ -137,19 +137,21 @@ impl Touch {
         }
         self.screen_w = sw;
         self.screen_h = sh;
-        self.scale = (sw / W as f32).min(sh / crate::game::H as f32);
-        if self.scale <= 0.0 {
-            self.scale = 1.0;
+        // The presenter stretches the frame across the whole surface, so each
+        // axis has its own scale and there is no offset.
+        self.scale_x = sw / W as f32;
+        self.scale_y = sh / crate::game::H as f32;
+        if self.scale_x <= 0.0 {
+            self.scale_x = 1.0;
         }
-        self.offset = Vec2::new(
-            (sw - W as f32 * self.scale) * 0.5,
-            (sh - crate::game::H as f32 * self.scale) * 0.5,
-        );
+        if self.scale_y <= 0.0 {
+            self.scale_y = 1.0;
+        }
     }
 
     fn to_buffer(&self, x: f32, y: f32) -> Option<Vec2> {
         if x.is_finite() && y.is_finite() {
-            let p = (Vec2::new(x, y) - self.offset) / self.scale;
+            let p = Vec2::new(x / self.scale_x, y / self.scale_y);
             if p.x >= 0.0
                 && p.y >= 0.0
                 && p.x < W as f32
