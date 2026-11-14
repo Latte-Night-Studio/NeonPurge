@@ -40,7 +40,11 @@ AAudio. Потрібен **Android 8.0+**.
 
 | Файл | Що це |
 | --- | --- |
-| **[NeonPurge-android-1.4.0.apk](https://github.com/Latte-Night-Studio/NeonPurge/releases/download/v1.4.0-android/NeonPurge-android-1.4.0.apk)** | Підписаний APK для Android 8.0+ |
+| **[NeonPurge-android-1.4.0.apk](https://github.com/Latte-Night-Studio/NeonPurge/releases/download/v1.4.0/NeonPurge-android-1.4.0.apk)** | Підписаний APK для Android 8.0+ |
+
+APK лежить у тому самому релізі [`v1.4.0`](https://github.com/Latte-Night-Studio/NeonPurge/releases/tag/v1.4.0),
+що й десктопна версія. Джерела Android-порту — на тегу
+[`v1.4.0-android`](https://github.com/Latte-Night-Studio/NeonPurge/tree/v1.4.0-android).
 
 Коротко про керування: ліва половина екрана — рух, права — приціл і
 автоматичний вогонь, зверху — слоти зброї `1`–`9`, праворуч — **RELOAD**,

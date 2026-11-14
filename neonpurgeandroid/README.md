@@ -14,9 +14,11 @@
 
 | Файл | Що це |
 | --- | --- |
-| **NeonPurge-android-1.4.0.apk** | Підписаний release-APK для Android 8.0+ |
+| **[NeonPurge-android-1.4.0.apk](https://github.com/Latte-Night-Studio/NeonPurge/releases/download/v1.4.0/NeonPurge-android-1.4.0.apk)** | Підписаний release-APK для Android 8.0+ |
 
-Тег: [`v1.4.0-android`](https://github.com/Latte-Night-Studio/NeonPurge/releases/tag/v1.4.0-android).
+APK лежить у спільному релізі [`v1.4.0`](https://github.com/Latte-Night-Studio/NeonPurge/releases/tag/v1.4.0)
+разом із десктопним exe. Джерела Android-порту — на тегу
+[`v1.4.0-android`](https://github.com/Latte-Night-Studio/NeonPurge/tree/v1.4.0-android).
 
 Встановлення:
 
